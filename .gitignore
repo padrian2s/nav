@@ -1,0 +1,5 @@
+.build/
+build/
+.serena/
+.DS_Store
+*.zip

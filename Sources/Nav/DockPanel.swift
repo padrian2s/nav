@@ -1,0 +1,262 @@
+import AppKit
+import SwiftUI
+
+/// Borderless floating panel that can take key focus (for Esc / arrows)
+/// without activating Nav, so focus returns to the previous app on dismiss.
+final class DockPanel: NSPanel {
+    var onKey: (NSEvent) -> Bool = { _ in false }
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        level = .popUpMenu
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        hidesOnDeactivate = false
+        isMovable = false
+    }
+
+    override var canBecomeKey: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        if !onKey(event) { super.keyDown(with: event) }
+    }
+
+    // ⌘-shortcuts arrive here, not in keyDown (there is no menu bar to handle them).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), onKey(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private var mouseMonitor: Any?
+
+    /// Shows the panel centered horizontally on the cursor, with the cursor
+    /// `anchorY` points above the panel's bottom edge, clamped to the screen.
+    func present(size: NSSize, anchorY: CGFloat) {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main!
+        var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - anchorY)
+        let vf = screen.visibleFrame
+        origin.x = min(max(origin.x, vf.minX), vf.maxX - size.width)
+        origin.y = min(max(origin.y, vf.minY), vf.maxY - size.height)
+
+        setFrame(NSRect(origin: origin, size: size), display: true)
+        alphaValue = 0
+        makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            animator().alphaValue = 1
+        }
+
+        if mouseMonitor == nil {
+            mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                self?.dismiss()
+            }
+        }
+    }
+
+    /// Changes size around the current center, staying on screen.
+    func resize(to size: NSSize) {
+        guard isVisible, let vf = screen?.visibleFrame else { return }
+        var origin = NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2)
+        origin.x = min(max(origin.x, vf.minX), vf.maxX - size.width)
+        origin.y = min(max(origin.y, vf.minY), vf.maxY - size.height)
+        setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+    }
+
+    func dismiss() {
+        if let m = mouseMonitor { NSEvent.removeMonitor(m); mouseMonitor = nil }
+        guard isVisible else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.1
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.orderOut(nil)
+        })
+    }
+}
+
+/// Hosting view that turns right-click / ctrl-click into a context menu.
+final class MenuHostingView<Content: View>: NSHostingView<Content> {
+    var menuForEvent: (NSEvent) -> NSMenu? = { _ in nil }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let menu = menuForEvent(event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            super.rightMouseDown(with: event)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control), let menu = menuForEvent(event) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            super.mouseDown(with: event)
+        }
+    }
+}
+
+/// NSMenuItem that runs a closure.
+final class ActionItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, key: String = "", modifiers: NSEvent.ModifierFlags = [], _ handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: key)
+        keyEquivalentModifierMask = modifiers
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func run() { handler() }
+}
+
+final class DockController {
+    private let panel = DockPanel()
+    private let state = DockState()
+
+    var isVisible: Bool { panel.isVisible }
+
+    init() {
+        let host = MenuHostingView(rootView: DockView(state: state))
+        host.menuForEvent = { [weak self] _ in
+            guard let self, let i = self.state.hoveredIndex, self.state.items.indices.contains(i) else { return nil }
+            return self.menu(for: self.state.items[i])
+        }
+        panel.contentView = host
+        state.onOpen = { [weak self] item in self?.open(item) }
+        panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+
+        // Keep running dots / recent apps live while the popup is open.
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                guard let self, self.panel.isVisible else { return }
+                self.state.sections = DockModel.load()
+            }
+        }
+    }
+
+    func toggle() {
+        isVisible ? hide() : show()
+    }
+
+    func show() {
+        state.metrics = DockMetrics.current()
+        state.sections = DockModel.load()
+        state.hoverX = nil
+        state.selected = nil
+
+        let m = state.metrics
+        let extra = m.magnify ? m.tileSize * (m.maxScale - 1) * 2.2 : 0
+        let size = NSSize(width: state.baseRowWidth + m.padding * 2 + extra + 120,
+                          height: m.tileSize * m.maxScale + m.padding * 2 + 6 + m.labelHeight)
+        // Cursor sits on the middle of the dock row.
+        panel.present(size: size, anchorY: (m.tileSize + m.padding * 2 + 6) / 2)
+    }
+
+    func hide() {
+        panel.dismiss()
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        switch Int(event.keyCode) {
+        case 53: hide()                                    // Esc
+        case 123: state.move(-1)                           // ←
+        case 124, 48: state.move(1)                        // →, Tab
+        case 36, 76:                                       // Return, Enter
+            if let i = state.selected, state.items.indices.contains(i) { open(state.items[i]) }
+        default: return false
+        }
+        return true
+    }
+
+    // MARK: Context menu (mirrors the real Dock's)
+
+    private func menu(for item: DockItem) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let showInFinder = ActionItem("Show in Finder") { [weak self] in
+            self?.hide()
+            NSWorkspace.shared.activateFileViewerSelecting([item.url])
+        }
+
+        switch item.kind {
+        case .app:
+            let options = NSMenu()
+            options.addItem(showInFinder)
+            let optionsItem = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
+            optionsItem.submenu = options
+            menu.addItem(optionsItem)
+            menu.addItem(.separator())
+
+            let running = item.bundleID.flatMap {
+                NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
+            }
+            if let app = running {
+                menu.addItem(ActionItem("Show All Windows") { [weak self] in self?.open(item) })
+                menu.addItem(ActionItem(app.isHidden ? "Unhide" : "Hide") { [weak self] in
+                    self?.hide()
+                    if app.isHidden { app.unhide() } else { app.hide() }
+                })
+                if item.bundleID != "com.apple.finder" {
+                    menu.addItem(ActionItem("Quit") { app.terminate() })
+                    // Hold ⌥ to swap Quit for Force Quit, like the Dock.
+                    let force = ActionItem("Force Quit", modifiers: .option) { app.forceTerminate() }
+                    force.isAlternate = true
+                    menu.addItem(force)
+                }
+            } else {
+                menu.addItem(ActionItem("Open") { [weak self] in self?.open(item) })
+            }
+
+        case .folder:
+            menu.addItem(ActionItem("Open \"\(item.name)\"") { [weak self] in self?.open(item) })
+            menu.addItem(showInFinder)
+
+        case .trash:
+            menu.addItem(ActionItem("Open") { [weak self] in self?.open(item) })
+            menu.addItem(.separator())
+            menu.addItem(ActionItem("Empty Trash") { [weak self] in self?.emptyTrash() })
+        }
+        return menu
+    }
+
+    private func emptyTrash() {
+        hide()
+        let alert = NSAlert()
+        alert.messageText = "Are you sure you want to permanently erase the items in the Trash?"
+        alert.informativeText = "You can’t undo this action."
+        alert.addButton(withTitle: "Empty Trash")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Let Finder do it so Trash on every volume is emptied.
+        let script = NSAppleScript(source: "tell application \"Finder\" to empty trash")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        if let error { NSLog("Nav: empty trash failed: \(error)") }
+    }
+
+    private func open(_ item: DockItem) {
+        hide()
+        switch item.kind {
+        case .app:
+            if let id = item.bundleID,
+               let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
+                app.unhide()
+                app.activate()
+                // Reopen (like a Dock click) so apps with no windows show one.
+                NSWorkspace.shared.openApplication(at: item.url, configuration: .init())
+            } else {
+                NSWorkspace.shared.openApplication(at: item.url, configuration: .init())
+            }
+        case .folder, .trash:
+            NSWorkspace.shared.open(item.url)
+        }
+    }
+}

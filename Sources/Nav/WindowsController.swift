@@ -1,0 +1,222 @@
+import AppKit
+import SwiftUI
+
+/// ⌘⇧E: previews of every open window, grouped by app.
+final class WindowsController {
+    private let panel = DockPanel()
+    private let state = WindowsState()
+    private var loadTask: Task<Void, Never>?
+
+    var isVisible: Bool { panel.isVisible }
+
+    init() {
+        let host = MenuHostingView(rootView: WindowsView(state: state))
+        host.menuForEvent = { [weak self] _ in
+            guard let self, let t = self.state.flat.first(where: { $0.id == self.state.hovered }) else { return nil }
+            return self.menu(for: t)
+        }
+        panel.contentView = host
+        state.onFocus = { [weak self] target in self?.focus(target) }
+        state.onClose = { [weak self] target in self?.close(target) }
+        state.onOpenSettings = { [weak self] in
+            self?.hide()
+            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+            NSWorkspace.shared.open(url)
+        }
+        panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        Task { @MainActor in ITerm.cached = await ITerm.tabs() }   // warm the cache for the first ⌘⇧E
+    }
+
+    func toggle() {
+        isVisible ? hide() : show()
+    }
+
+    func hide() {
+        loadTask?.cancel()
+        panel.dismiss()
+    }
+
+    func show() {
+        state.hovered = nil
+        state.selected = nil
+
+        guard WindowsModel.hasScreenRecording else {
+            CGRequestScreenCaptureAccess()   // system prompt, first time only
+            state.needsPermission = true
+            state.groups = []
+            panel.present(size: NSSize(width: 420, height: 200), anchorY: 100)
+            return
+        }
+        state.needsPermission = false
+
+        loadTask?.cancel()
+        loadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            async let freshTabs = ITerm.tabs()
+            let groups = (try? await WindowsModel.load(iTermTabs: ITerm.cached)) ?? []
+            guard !Task.isCancelled else { return }
+            self.state.groups = groups
+            self.state.selected = self.state.flat.first?.id
+            self.present()
+            async let thumbnails: Void = self.loadThumbnails()
+
+            let tabs = await freshTabs
+            ITerm.cached = tabs
+            if !Task.isCancelled {
+                let selected = self.state.selected
+                self.state.applyTabs(tabs)
+                if !self.state.flat.contains(where: { $0.id == selected }) { self.state.selected = self.state.flat.first?.id }
+                self.panel.resize(to: self.panelSize())
+            }
+            await thumbnails
+        }
+    }
+
+    /// Re-reads windows after a close/quit, keeping thumbnails we already have.
+    /// If `pending` is still there, its app is probably asking for confirmation
+    /// ("Save changes?", "Close tab with running job?"), so step aside and show it.
+    private func reload(after delay: TimeInterval, pending: SwitchTarget, wholeApp: Bool = false) {
+        loadTask?.cancel()
+        loadTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled, self.panel.isVisible else { return }
+            let tabs = await ITerm.tabs()
+            ITerm.cached = tabs
+            guard var groups = try? await WindowsModel.load(iTermTabs: tabs), !Task.isCancelled else { return }
+            let images = Dictionary(self.state.groups.flatMap(\.windows).compactMap { w in w.image.map { (w.id, $0) } },
+                                    uniquingKeysWith: { a, _ in a })
+            for g in groups.indices {
+                for w in groups[g].windows.indices { groups[g].windows[w].image = images[groups[g].windows[w].id] }
+            }
+            let stillThere = groups.contains { g in
+                wholeApp ? g.pid == pending.window.pid
+                         : g.windows.contains { w in w.id == pending.window.id && (pending.tab == nil || !w.tabs.isEmpty) }
+            }
+            if stillThere && (wholeApp || pending.tab == nil || ITerm.hasTab(pending.tab!, in: tabs)) {
+                self.focus(pending)
+                return
+            }
+            let selected = self.state.selected
+            self.state.groups = groups
+            if !self.state.flat.contains(where: { $0.id == selected }) { self.state.selected = self.state.flat.first?.id }
+            if groups.isEmpty { self.hide(); return }
+            self.panel.resize(to: self.panelSize())
+            await self.loadThumbnails(onlyMissing: true)
+        }
+    }
+
+    private func present() {
+        let size = panelSize()
+        panel.present(size: size, anchorY: size.height / 2)
+    }
+
+    private func panelSize() -> NSSize {
+        let screen = panel.isVisible ? panel.screen
+            : NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
+        let vf = (screen ?? NSScreen.main!).visibleFrame
+        let content = state.metrics.contentSize(state.groups)
+        return NSSize(width: min(content.width, vf.width * 0.92), height: min(content.height, vf.height * 0.85))
+    }
+
+    private func loadThumbnails(onlyMissing: Bool = false) async {
+        let m = state.metrics
+        let windows = state.groups.flatMap(\.windows).filter { $0.tabs.isEmpty && !(onlyMissing && $0.image != nil) }
+        await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
+            for w in windows {
+                // Capture at 2x the card size for retina.
+                let size = CGSize(width: m.cardWidth(w) * 2, height: m.thumbHeight * 2)
+                group.addTask { (w.id, await WindowsModel.thumbnail(of: w, maxSize: size)) }
+            }
+            for await (id, image) in group {
+                guard !Task.isCancelled else { return }
+                if let image { await MainActor.run { state.setImage(image, for: id) } }
+            }
+        }
+    }
+
+    private func focus(_ target: SwitchTarget) {
+        hide()
+        if let tab = target.tab {
+            ITerm.select(tab)
+            return
+        }
+        WindowsModel.requestAccessibilityIfNeeded()
+        WindowsModel.focus(target.window, bundleURL: state.appFor(target.window)?.bundleURL)
+    }
+
+    // MARK: Close / quit
+
+    /// Closes a window (its close button) or an iTerm2 tab. The popup stays open.
+    private func close(_ target: SwitchTarget) {
+        if let tab = target.tab {
+            ITerm.close(tab)
+        } else if !WindowsModel.close(target.window) {
+            // Closing another app's window needs Accessibility.
+            WindowsModel.requestAccessibilityIfNeeded(force: true)
+            return
+        }
+        state.remove(target.id)
+        reload(after: 0.6, pending: target)
+    }
+
+    private func quit(_ target: SwitchTarget, force: Bool) {
+        guard let app = NSRunningApplication(processIdentifier: target.window.pid) else { return }
+        _ = force ? app.forceTerminate() : app.terminate()
+        state.remove(pid: target.window.pid)
+        reload(after: 1.0, pending: target, wholeApp: true)
+    }
+
+    private func menu(for target: SwitchTarget) -> NSMenu {
+        let menu = NSMenu()
+        let appName = state.appFor(target.window)?.name ?? "App"
+        menu.addItem(ActionItem(target.tab == nil ? "Close Window" : "Close Tab", key: "w", modifiers: .command) { [weak self] in
+            self?.close(target)
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Quit \(appName)", key: "q", modifiers: .command) { [weak self] in
+            self?.quit(target, force: false)
+        })
+        let force = ActionItem("Force Quit \(appName)", key: "q", modifiers: [.command, .option]) { [weak self] in
+            self?.quit(target, force: true)
+        }
+        force.isAlternate = true
+        menu.addItem(force)
+        return menu
+    }
+
+    private var current: SwitchTarget? {
+        let id = state.selected ?? state.hovered
+        return state.flat.first { $0.id == id }
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if mods.contains(.command) {
+            switch Int(event.keyCode) {
+            case 13: if let t = current { close(t) }                                   // ⌘W
+            case 12: if let t = current { quit(t, force: mods.contains(.option)) }     // ⌘Q, ⌥⌘Q
+            default: return false
+            }
+            return true
+        }
+        switch Int(event.keyCode) {
+        case 53: hide()                                    // Esc
+        case 123: state.move(horizontal: -1)               // ←
+        case 124, 48, 30: state.move(horizontal: 1)        // →, Tab, ]
+        case 33: state.move(horizontal: -1)                // [
+        case 126: state.move(vertical: -1)                 // ↑
+        case 125: state.move(vertical: 1)                  // ↓
+        case 36, 76:                                       // Return, Enter
+            if let t = current { focus(t) }
+        case let code where WindowsController.digitKeys[code] != nil:   // 1…9, 0 → that window
+            let i = WindowsController.digitKeys[code]!
+            let all = state.flat
+            if all.indices.contains(i) { focus(all[i]) }
+        default: return false
+        }
+        return true
+    }
+
+    /// Physical number-row keys (layout independent) → window index.
+    private static let digitKeys: [Int: Int] = [18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8, 29: 9]
+}
