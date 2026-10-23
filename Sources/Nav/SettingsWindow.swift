@@ -87,6 +87,12 @@ struct SettingsView: View {
                 Section("General") {
                     Toggle("Open Nav at login", isOn: $model.config.launchAtLogin)
                     VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Pass ⌘E / ⌘⇧E to remote desktops", isOn: $model.config.passShortcutsToRemoteApps)
+                        Text("While Screen Sharing, Remote Desktop, VNC or a VM is in front, the shortcuts go to the remote Mac.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
                         Toggle("Hide the macOS Dock", isOn: Binding(get: { model.dockHidden }, set: { model.dockHidden = $0 }))
                         Text("It never slides in; use ⌘E instead. ⌘Tab and notifications keep working.")
                             .font(.system(size: 11))

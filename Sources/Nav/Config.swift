@@ -7,6 +7,31 @@ struct Config: Codable {
     var popupBorder = BorderConfig()
     /// Start Nav when you log in (a macOS Login Item).
     var launchAtLogin = true
+    /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
+    /// the remote machine instead of this Mac's Nav.
+    var passShortcutsToRemoteApps = true
+    /// Bundle ids that count as remote desktop / VM apps (added to the built-in list).
+    var remoteApps: [String] = []
+
+    static let builtInRemoteApps: Set<String> = [
+        "com.apple.ScreenSharing",                  // Screen Sharing
+        "com.microsoft.rdc.macos",                  // Windows App / Microsoft Remote Desktop
+        "com.realvnc.vncviewer",                    // RealVNC Viewer
+        "com.philandro.anydesk",                    // AnyDesk
+        "com.teamviewer.TeamViewer",                // TeamViewer
+        "tv.parsec.www",                            // Parsec
+        "com.carriez.rustdesk",                     // RustDesk
+        "com.p5sys.jump.mac.viewer",                // Jump Desktop
+        "com.p5sys.jump.mac.viewer.web",
+        "com.parallels.desktop.console",            // Parallels
+        "com.vmware.fusion",                        // VMware Fusion
+        "com.utmapp.UTM",                           // UTM
+    ]
+
+    func isRemoteApp(_ bundleID: String?) -> Bool {
+        guard let bundleID else { return false }
+        return Config.builtInRemoteApps.contains(bundleID) || remoteApps.contains(bundleID)
+    }
 
     /// Border around the ⌘⇧E popup.
     struct BorderConfig: Codable {
@@ -67,6 +92,8 @@ struct Config: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         popupBorder = try c.decodeIfPresent(BorderConfig.self, forKey: .popupBorder) ?? BorderConfig()
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
+        passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
+        remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []
     }
 
     static let url = FileManager.default.homeDirectoryForCurrentUser
