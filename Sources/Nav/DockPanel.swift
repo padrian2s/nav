@@ -57,6 +57,14 @@ final class DockPanel: NSPanel {
         }
     }
 
+    /// Changes height keeping the bottom edge (the dock row) in place.
+    func setHeight(_ height: CGFloat) {
+        guard isVisible, let vf = screen?.visibleFrame else { return }
+        var f = frame
+        f.size.height = min(height, vf.maxY - f.minY)
+        setFrame(f, display: true)
+    }
+
     /// Changes size around the current center, staying on screen.
     func resize(to size: NSSize) {
         guard isVisible, let vf = screen?.visibleFrame else { return }
@@ -128,7 +136,13 @@ final class DockController {
             return self.menu(for: self.state.items[i])
         }
         panel.contentView = host
-        state.onOpen = { [weak self] item in self?.open(item) }
+        state.onOpen = { [weak self] item in self?.activate(item) }
+        state.onOpenApp = { [weak self] item in self?.open(item) }
+        state.onSelectTab = { [weak self] tab in
+            self?.hide()
+            Tabs.select(tab)
+        }
+        state.onCloseTab = { [weak self] tab in self?.closeTab(tab) }
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
 
         // Keep running dots / recent apps live while the popup is open.
@@ -145,7 +159,10 @@ final class DockController {
         isVisible ? hide() : show()
     }
 
+    private var baseHeight: CGFloat = 0
+
     func show() {
+        state.stack = nil
         state.metrics = DockMetrics.current()
         state.sections = DockModel.load()
         state.hoverX = nil
@@ -155,6 +172,7 @@ final class DockController {
         let extra = m.magnify ? m.tileSize * (m.maxScale - 1) * 2.2 : 0
         let size = NSSize(width: state.baseRowWidth + m.padding * 2 + extra + 120,
                           height: m.tileSize * m.maxScale + m.padding * 2 + 6 + m.labelHeight)
+        baseHeight = size.height
         // Cursor sits on the middle of the dock row.
         panel.present(size: size, anchorY: (m.tileSize + m.padding * 2 + 6) / 2)
     }
@@ -163,7 +181,93 @@ final class DockController {
         panel.dismiss()
     }
 
+    // MARK: Tab stacks (Chrome, iTerm2)
+
+    /// Click on an icon: tab-capable apps open their tab list, everything else opens.
+    private func activate(_ item: DockItem) {
+        guard item.isRunning, let app = item.bundleID.flatMap(TabApp.init(rawValue:)) else {
+            open(item)
+            return
+        }
+        if state.stack?.item.id == item.id {
+            setStack(nil)
+            return
+        }
+        let cached = Tabs.cached.filter { $0.app == app }
+        state.stackHovered = nil
+        state.stackSelected = cached.flatMap(\.tabs).first { $0.isCurrent }?.id
+        setStack(cached.isEmpty ? nil : DockStack(item: item, windows: cached))
+        refreshStack(item, app: app, openIfEmpty: true)
+    }
+
+    private func refreshStack(_ item: DockItem, app: TabApp, openIfEmpty: Bool = false, after delay: TimeInterval = 0) {
+        Task { @MainActor [weak self] in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            let fresh = await Tabs.fetch(app)
+            Tabs.cached = Tabs.cached.filter { $0.app != app } + fresh
+            guard let self, self.panel.isVisible else { return }
+            if fresh.isEmpty {
+                // No windows, or no Automation permission yet: behave like a normal click.
+                if openIfEmpty { self.open(item) } else { self.setStack(nil) }
+                return
+            }
+            guard self.state.stack == nil || self.state.stack?.item.id == item.id else { return }
+            if self.state.stack == nil && !openIfEmpty { return }
+            self.setStack(DockStack(item: item, windows: fresh))
+            if let sel = self.state.stackSelected, !fresh.flatMap(\.tabs).contains(where: { $0.id == sel }) {
+                self.state.stackSelected = fresh.flatMap(\.tabs).first { $0.isCurrent }?.id
+            }
+        }
+    }
+
+    private func setStack(_ stack: DockStack?) {
+        let m = state.metrics
+        if let stack {
+            let needed = m.rowHeight + m.stackGap + m.stackHeight(stack) + 8
+            panel.setHeight(max(baseHeight, needed))
+        }
+        withAnimation(.easeOut(duration: 0.15)) { state.stack = stack }
+        if stack == nil { panel.setHeight(baseHeight) }
+    }
+
+    private func closeTab(_ tab: TabInfo) {
+        guard var stack = state.stack else { return }
+        Tabs.close(tab)
+        let tabs = stack.tabs
+        let i = tabs.firstIndex { $0.id == tab.id } ?? 0
+        for w in stack.windows.indices { stack.windows[w].tabs.removeAll { $0.id == tab.id } }
+        stack.windows.removeAll { $0.tabs.isEmpty }
+        state.stackHovered = nil
+        let rest = stack.tabs
+        state.stackSelected = rest.isEmpty ? nil : rest[min(i, rest.count - 1)].id
+        setStack(rest.isEmpty ? nil : stack)
+        refreshStack(stack.item, app: tab.app, after: 0.6)
+    }
+
+    private func handleStackKey(_ event: NSEvent, _ stack: DockStack) -> Bool {
+        let current = stack.tabs.first { $0.id == (state.stackSelected ?? state.stackHovered) }
+        if event.modifierFlags.contains(.command) {
+            guard event.keyCode == 13, let current else { return false }      // ⌘W
+            closeTab(current)
+            return true
+        }
+        switch Int(event.keyCode) {
+        case 53: setStack(nil)                                                // Esc
+        case 126, 33: state.moveInStack(-1)                                   // ↑, [
+        case 125, 30, 48: state.moveInStack(1)                                // ↓, ], Tab
+        case 36, 76: if let current { state.onSelectTab(current) }            // Return
+        case let code where numberRowKeys[code] != nil:                       // 1…9, 0
+            let i = numberRowKeys[code]!
+            if stack.tabs.indices.contains(i) { state.onSelectTab(stack.tabs[i]) }
+        default:
+            setStack(nil)                                                     // ← → etc. go back to the dock
+            return handleKey(event)
+        }
+        return true
+    }
+
     private func handleKey(_ event: NSEvent) -> Bool {
+        if let stack = state.stack { return handleStackKey(event, stack) }
         switch Int(event.keyCode) {
         case 53: hide()                                    // Esc
         case 123: state.move(-1)                           // ←

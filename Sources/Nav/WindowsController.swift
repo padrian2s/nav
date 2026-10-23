@@ -23,8 +23,12 @@ final class WindowsController {
             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
             NSWorkspace.shared.open(url)
         }
+        state.onOpenPreferences = { [weak self] in
+            self?.hide()
+            SettingsWindowController.shared.show()
+        }
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
-        Task { @MainActor in ITerm.cached = await ITerm.tabs() }   // warm the cache for the first ⌘⇧E
+        Task { @MainActor in Tabs.cached = await Tabs.fetchAll() }   // warm the cache for the first popup
     }
 
     func toggle() {
@@ -37,6 +41,7 @@ final class WindowsController {
     }
 
     func show() {
+        state.border = Config.current.popupBorder
         state.hovered = nil
         state.selected = nil
 
@@ -44,7 +49,9 @@ final class WindowsController {
             CGRequestScreenCaptureAccess()   // system prompt, first time only
             state.needsPermission = true
             state.groups = []
-            panel.present(size: NSSize(width: 420, height: 200), anchorY: 100)
+            let margin = state.border.margin * 2
+            panel.present(size: NSSize(width: 420 + margin, height: 200 + margin), anchorY: 100 + margin / 2)
+            startBorder()
             return
         }
         state.needsPermission = false
@@ -52,8 +59,8 @@ final class WindowsController {
         loadTask?.cancel()
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            async let freshTabs = ITerm.tabs()
-            let groups = (try? await WindowsModel.load(iTermTabs: ITerm.cached)) ?? []
+            async let freshTabs = Tabs.fetchAll()
+            let groups = (try? await WindowsModel.load(tabs: Tabs.cached)) ?? []
             guard !Task.isCancelled else { return }
             self.state.groups = groups
             self.state.selected = self.state.flat.first?.id
@@ -61,7 +68,7 @@ final class WindowsController {
             async let thumbnails: Void = self.loadThumbnails()
 
             let tabs = await freshTabs
-            ITerm.cached = tabs
+            Tabs.cached = tabs
             if !Task.isCancelled {
                 let selected = self.state.selected
                 self.state.applyTabs(tabs)
@@ -80,9 +87,9 @@ final class WindowsController {
         loadTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled, self.panel.isVisible else { return }
-            let tabs = await ITerm.tabs()
-            ITerm.cached = tabs
-            guard var groups = try? await WindowsModel.load(iTermTabs: tabs), !Task.isCancelled else { return }
+            let tabs = await Tabs.fetchAll()
+            Tabs.cached = tabs
+            guard var groups = try? await WindowsModel.load(tabs: tabs), !Task.isCancelled else { return }
             let images = Dictionary(self.state.groups.flatMap(\.windows).compactMap { w in w.image.map { (w.id, $0) } },
                                     uniquingKeysWith: { a, _ in a })
             for g in groups.indices {
@@ -92,7 +99,7 @@ final class WindowsController {
                 wholeApp ? g.pid == pending.window.pid
                          : g.windows.contains { w in w.id == pending.window.id && (pending.tab == nil || !w.tabs.isEmpty) }
             }
-            if stillThere && (wholeApp || pending.tab == nil || ITerm.hasTab(pending.tab!, in: tabs)) {
+            if stillThere && (wholeApp || pending.tab == nil || Tabs.hasTab(pending.tab!, in: tabs)) {
                 self.focus(pending)
                 return
             }
@@ -108,6 +115,24 @@ final class WindowsController {
     private func present() {
         let size = panelSize()
         panel.present(size: size, anchorY: size.height / 2)
+        startBorder()
+    }
+
+    private var borderGeneration = 0
+
+    /// Fades the popup border in, then (optionally) out after the configured time.
+    private func startBorder() {
+        let cfg = state.border
+        borderGeneration += 1
+        let gen = borderGeneration
+        state.borderOpacity = 0
+        guard cfg.enabled else { return }
+        withAnimation(.easeOut(duration: cfg.fadeIn)) { state.borderOpacity = cfg.opacity }
+        guard cfg.fade else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + cfg.fadeIn + cfg.duration) { [weak self] in
+            guard let self, gen == self.borderGeneration else { return }
+            withAnimation(.easeInOut(duration: cfg.fadeOut)) { self.state.borderOpacity = 0 }
+        }
     }
 
     private func panelSize() -> NSSize {
@@ -115,7 +140,9 @@ final class WindowsController {
             : NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
         let vf = (screen ?? NSScreen.main!).visibleFrame
         let content = state.metrics.contentSize(state.groups)
-        return NSSize(width: min(content.width, vf.width * 0.92), height: min(content.height, vf.height * 0.85))
+        let margin = state.border.margin * 2
+        return NSSize(width: min(content.width, vf.width * 0.92) + margin,
+                      height: min(content.height, vf.height * 0.85) + margin)
     }
 
     private func loadThumbnails(onlyMissing: Bool = false) async {
@@ -137,7 +164,7 @@ final class WindowsController {
     private func focus(_ target: SwitchTarget) {
         hide()
         if let tab = target.tab {
-            ITerm.select(tab)
+            Tabs.select(tab)
             return
         }
         WindowsModel.requestAccessibilityIfNeeded()
@@ -149,7 +176,7 @@ final class WindowsController {
     /// Closes a window (its close button) or an iTerm2 tab. The popup stays open.
     private func close(_ target: SwitchTarget) {
         if let tab = target.tab {
-            ITerm.close(tab)
+            Tabs.close(tab)
         } else if !WindowsModel.close(target.window) {
             // Closing another app's window needs Accessibility.
             WindowsModel.requestAccessibilityIfNeeded(force: true)
@@ -195,6 +222,7 @@ final class WindowsController {
             switch Int(event.keyCode) {
             case 13: if let t = current { close(t) }                                   // ⌘W
             case 12: if let t = current { quit(t, force: mods.contains(.option)) }     // ⌘Q, ⌥⌘Q
+            case 43: state.onOpenPreferences()                                         // ⌘,
             default: return false
             }
             return true
@@ -208,15 +236,15 @@ final class WindowsController {
         case 125: state.move(vertical: 1)                  // ↓
         case 36, 76:                                       // Return, Enter
             if let t = current { focus(t) }
-        case let code where WindowsController.digitKeys[code] != nil:   // 1…9, 0 → that window
-            let i = WindowsController.digitKeys[code]!
+        case let code where numberRowKeys[code] != nil:    // 1…9, 0 → that window
+            let i = numberRowKeys[code]!
             let all = state.flat
             if all.indices.contains(i) { focus(all[i]) }
         default: return false
         }
         return true
     }
-
-    /// Physical number-row keys (layout independent) → window index.
-    private static let digitKeys: [Int: Int] = [18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8, 29: 9]
 }
+
+/// Physical number-row keys 1…9, 0 (layout independent) → item index.
+let numberRowKeys: [Int: Int] = [18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8, 29: 9]

@@ -10,6 +10,7 @@ struct DockItem: Identifiable {
     let icon: NSImage
     var isRunning: Bool
     var bundleID: String?
+    var isAudible = false
 }
 
 /// Reads the real Dock configuration so the popup mirrors it.
@@ -22,12 +23,14 @@ enum DockModel {
         let prefs = UserDefaults(suiteName: "com.apple.dock")
         let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
         let runningIDs = Set(running.compactMap { $0.bundleIdentifier })
+        let playing = AudioActivity.playingApps()
+        let audibleIDs = Set(running.filter { playing.contains($0.processIdentifier) }.compactMap { $0.bundleIdentifier })
 
         var pinnedURLs = [finderURL]
         pinnedURLs += urls(from: prefs?.array(forKey: "persistent-apps"))
         let pinnedPaths = Set(pinnedURLs.map { $0.standardizedFileURL.path })
 
-        let pinned = pinnedURLs.map { appItem($0, running: runningIDs) }
+        let pinned = pinnedURLs.map { appItem($0, running: runningIDs, audible: audibleIDs) }
 
         let showRecents = prefs?.object(forKey: "show-recents") as? Bool ?? true
         let pinnedIDs = Set(pinnedURLs.compactMap { Bundle(url: $0)?.bundleIdentifier })
@@ -41,7 +44,7 @@ enum DockModel {
                 recentURLs.append(url)
             }
         }
-        let recent = recentURLs.map { appItem($0, running: runningIDs) }
+        let recent = recentURLs.map { appItem($0, running: runningIDs, audible: audibleIDs) }
 
         var others = urls(from: prefs?.array(forKey: "persistent-others")).map { url in
             DockItem(id: url.path, kind: .folder, url: url, name: displayName(url),
@@ -64,11 +67,12 @@ enum DockModel {
         }
     }
 
-    private static func appItem(_ url: URL, running: Set<String>) -> DockItem {
+    private static func appItem(_ url: URL, running: Set<String>, audible: Set<String>) -> DockItem {
         let bundleID = Bundle(url: url)?.bundleIdentifier
         let image = bundleID == "com.apple.iCal" ? CalendarIcon.make() : icon(for: url)
         return DockItem(id: url.path, kind: .app, url: url, name: displayName(url), icon: image,
-                        isRunning: bundleID.map(running.contains) ?? false, bundleID: bundleID)
+                        isRunning: bundleID.map(running.contains) ?? false, bundleID: bundleID,
+                        isAudible: bundleID.map(audible.contains) ?? false)
     }
 
     private static func trashItem() -> DockItem {

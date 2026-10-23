@@ -9,6 +9,7 @@ struct WindowsMetrics {
     let spacing: CGFloat = 12
     let headerWidth: CGFloat = 84
     let padding: CGFloat = 18
+    let footerHeight: CGFloat = 30
     let tabRowHeight: CGFloat = 22
     let tabCardWidth: CGFloat = 300
     let minRowHeight: CGFloat = 84     // app icon + name
@@ -33,7 +34,7 @@ struct WindowsMetrics {
 
     func contentSize(_ groups: [AppWindows]) -> CGSize {
         let width = (groups.map(rowWidth).max() ?? 320) + padding * 2
-        let height = groups.map(rowHeight).reduce(0, +) + CGFloat(max(groups.count - 1, 0)) * spacing + padding * 2
+        let height = groups.map(rowHeight).reduce(0, +) + CGFloat(max(groups.count - 1, 0)) * spacing + padding * 2 + footerHeight
         return CGSize(width: max(width, 320), height: max(height, 120))
     }
 }
@@ -41,12 +42,15 @@ struct WindowsMetrics {
 final class WindowsState: ObservableObject {
     @Published var groups: [AppWindows] = []
     @Published var needsPermission = false
+    @Published var border = Config.BorderConfig()
+    @Published var borderOpacity: Double = 0
     @Published var hovered: String?          // SwitchTarget.id
     @Published var selected: String?
     let metrics = WindowsMetrics()
     var onFocus: (SwitchTarget) -> Void = { _ in }
     var onClose: (SwitchTarget) -> Void = { _ in }
-    var onOpenSettings: () -> Void = {}
+    var onOpenSettings: () -> Void = {}       // System Settings → Screen Recording
+    var onOpenPreferences: () -> Void = {}    // Nav's own settings
 
     /// Everything selectable, in display order: each window, or each tab of an iTerm2 window.
     var flat: [SwitchTarget] {
@@ -72,12 +76,8 @@ final class WindowsState: ObservableObject {
         }
     }
 
-    func applyTabs(_ tabs: [CGWindowID: [TabInfo]]) {
-        for g in groups.indices {
-            for w in groups[g].windows.indices where !groups[g].windows[w].tabs.isEmpty || tabs[groups[g].windows[w].id] != nil {
-                groups[g].windows[w].tabs = tabs[groups[g].windows[w].id] ?? []
-            }
-        }
+    func applyTabs(_ snapshot: [TabWindow]) {
+        for g in groups.indices { Tabs.assign(to: &groups[g].windows, from: snapshot) }
     }
 
     /// Optimistically drops a closed window/tab (or a quit app) and keeps the
@@ -86,11 +86,14 @@ final class WindowsState: ObservableObject {
         let index = flat.firstIndex { $0.id == (selected ?? hovered) } ?? 0
         for g in groups.indices {
             if let pid, groups[g].pid == pid { groups[g].windows = [] }
-            for w in groups[g].windows.indices {
-                groups[g].windows[w].tabs.removeAll { $0.id == id }
-            }
-            groups[g].windows.removeAll { w in
-                id == "w\(w.id)" || (id?.hasPrefix("t\(w.id)-") == true && w.tabs.isEmpty)
+            groups[g].windows = groups[g].windows.compactMap { window in
+                var w = window
+                if id == "w\(w.id)" { return nil }
+                if let id, w.tabs.contains(where: { $0.id == id }) {
+                    w.tabs.removeAll { $0.id == id }
+                    if w.tabs.isEmpty { return nil }   // last tab closed → window is gone
+                }
+                return w
             }
         }
         groups.removeAll { $0.windows.isEmpty }
@@ -153,11 +156,47 @@ struct WindowsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(dockFrost))
-                .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !state.needsPermission { footer }
         }
+        .background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(dockFrost))
+                .glassEffect(.regular, in: .rect(cornerRadius: radius, style: .continuous))
+        }
+        .overlay {
+            if state.border.enabled {
+                PopupBorder(config: state.border)
+                    .opacity(state.borderOpacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(state.border.margin)   // room for the line and glow outside the glass
+    }
+
+    private var radius: CGFloat { CGFloat(state.border.cornerRadius) }
+
+    /// Shortcut hints and the settings button.
+    private var footer: some View {
+        HStack(spacing: 0) {
+            Text("1–9 switch  ·  [ ] select  ·  ⌘W close  ·  ⌘Q quit")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button { state.onOpenPreferences() } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("Nav Settings (⌘,)")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: state.metrics.footerHeight)
     }
 
     private func row(_ group: AppWindows) -> some View {
@@ -168,10 +207,13 @@ struct WindowsView: View {
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 48, height: 48)
-                Text(group.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                HStack(spacing: 3) {
+                    if group.isAudible { AudioIcon(size: 9) }
+                    Text(group.name)
+                        .font(.system(size: 11, weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
             }
             .frame(width: m.headerWidth)
             .padding(.top, max((m.rowHeight(group) - m.minRowHeight) / 2, 0))
@@ -260,10 +302,7 @@ struct WindowsView: View {
                     Circle()
                         .fill(Color.accentColor.opacity(tab.isCurrent ? 1 : 0))
                         .frame(width: 5, height: 5)
-                    Text(tab.title)
-                        .font(.system(size: 11, weight: tab.isCurrent ? .semibold : .regular))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    TabTitle(tab: tab)
                     Spacer(minLength: 0)
                     if state.hovered == target.id {
                         CloseButton(size: 14) { state.onClose(target) }
@@ -304,6 +343,63 @@ struct WindowsView: View {
             }
         }
         .padding(24)
+    }
+}
+
+/// The configurable line around the popup: solid, or a (rotating) palette gradient.
+struct PopupBorder: View {
+    let config: Config.BorderConfig
+
+    var body: some View {
+        let colors = config.colors.map { Color(nsColor: $0) }
+        let shape = RoundedRectangle(cornerRadius: CGFloat(config.cornerRadius + config.outset), style: .continuous)
+            .inset(by: -CGFloat(config.outset) - CGFloat(config.width) / 2)
+        TimelineView(.animation(paused: !config.animate || colors.count < 2)) { context in
+            let angle = Angle.degrees(config.animate ? context.date.timeIntervalSinceReferenceDate * 60 : 0)
+            let style: AnyShapeStyle = colors.count > 1
+                ? AnyShapeStyle(AngularGradient(colors: colors + [colors[0]], center: .center, angle: angle))
+                : AnyShapeStyle(colors.first ?? .accentColor)
+            shape
+                .strokeBorder(style, lineWidth: CGFloat(config.width))
+                .shadow(color: (colors.first ?? .accentColor).opacity(config.glow > 0 ? 0.9 : 0),
+                        radius: CGFloat(config.glow) / 2)
+        }
+    }
+}
+
+/// "Title · domain", one line.
+struct TabTitle: View {
+    let tab: TabInfo
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if tab.isAudible { AudioIcon(size: 10) }
+            Text(tab.title.isEmpty ? (tab.url ?? "Untitled") : tab.title)
+                .font(.system(size: 11, weight: tab.isCurrent ? .semibold : .regular))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let domain = tab.domain {
+                Text("· \(domain)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
+            }
+        }
+    }
+}
+
+/// 🔊 shown on apps / tabs that are playing sound.
+struct AudioIcon: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: "speaker.wave.2.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .fixedSize()
+            .layoutPriority(1)   // a long title must not squeeze it out
+            .help("Playing audio")
     }
 }
 

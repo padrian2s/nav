@@ -5,6 +5,9 @@ import Carbon.HIToolbox
 let dockHotKey = (code: kVK_ANSI_E, modifiers: cmdKey)
 let windowsHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | shiftKey)
 
+Config.writeDefaultsIfMissing()
+LoginItem.sync(Config.current.launchAtLogin)
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
