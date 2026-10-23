@@ -36,7 +36,7 @@ Permissions (only the first time):
 
 **General** (in ⚙︎ Settings):
 - **Open Nav at login**: on by default. Nav registers itself as a macOS Login Item.
-- **Hide the macOS Dock**: the real Dock stays out of sight (it never slides in), so ⌘E takes its place.
+- **Hide the macOS Dock**: while Nav runs, the real Dock stays out of sight (it never slides in), so ⌘E takes its place. Quitting Nav brings it back: use the ⏻ at the bottom of ⌘⇧E or **Quit Nav** in Settings.
 - **Pass ⌘E / ⌘⇧E to remote desktops**: on by default. While Screen Sharing, Windows App / Remote Desktop, VNC, AnyDesk, TeamViewer, Parsec, RustDesk, Jump Desktop or a VM (Parallels, VMware, UTM) is in front, Nav releases its shortcuts so they reach the remote Mac. To add more apps, put their bundle ids in `"remoteApps": [...]` in `config.json`.
 
 To install or update, run `./scripts/install.sh`. It builds Nav, copies it to `/Applications` and restarts it.

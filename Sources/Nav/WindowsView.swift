@@ -184,6 +184,16 @@ struct WindowsView: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            Button { NSApp.terminate(nil) } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("Quit Nav (brings the Dock back)")
             Button { state.onOpenPreferences() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12, weight: .medium))

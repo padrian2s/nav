@@ -6,7 +6,14 @@ let dockHotKey = (code: kVK_ANSI_E, modifiers: cmdKey)
 let windowsHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | shiftKey)
 
 Config.writeDefaultsIfMissing()
+Config.current.save()   // persist values migrated from older configs (e.g. hideDock) before anything changes them
 LoginItem.sync(Config.current.launchAtLogin)
+
+// The Dock is hidden only while Nav runs.
+if Config.current.hideDock, !MacDock.isHidden { MacDock.setHidden(true) }
+NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+    if Config.current.hideDock, MacDock.isHidden { MacDock.setHidden(false) }
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

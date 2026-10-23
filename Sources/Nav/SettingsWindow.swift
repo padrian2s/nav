@@ -8,16 +8,9 @@ final class SettingsModel: ObservableObject {
         didSet {
             config.save()
             if config.launchAtLogin != oldValue.launchAtLogin { LoginItem.sync(config.launchAtLogin) }
+            if config.hideDock != oldValue.hideDock, config.hideDock != MacDock.isHidden { MacDock.setHidden(config.hideDock) }
         }
     }
-    var dockHidden: Bool {
-        get { MacDock.isHidden }
-        set {
-            objectWillChange.send()
-            MacDock.setHidden(newValue)
-        }
-    }
-
     /// Border opacity in the preview, so the fade can be replayed.
     @Published var previewOpacity: Double?
     private var playGeneration = 0
@@ -93,8 +86,8 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Toggle("Hide the macOS Dock", isOn: Binding(get: { model.dockHidden }, set: { model.dockHidden = $0 }))
-                        Text("It never slides in; use ⌘E instead. ⌘Tab and notifications keep working.")
+                        Toggle("Hide the macOS Dock", isOn: $model.config.hideDock)
+                        Text("Hidden while Nav runs (use ⌘E instead); it comes back when you quit Nav.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -107,8 +100,9 @@ struct SettingsView: View {
                 Section {
                     HStack {
                         Button("Reset Border") { model.config.popupBorder = .init() }
-                        Spacer()
                         Button("Open config.json") { NSWorkspace.shared.open(Config.url) }
+                        Spacer()
+                        Button("Quit Nav") { NSApp.terminate(nil) }
                     }
                 }
             }

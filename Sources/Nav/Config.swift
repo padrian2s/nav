@@ -7,6 +7,8 @@ struct Config: Codable {
     var popupBorder = BorderConfig()
     /// Start Nav when you log in (a macOS Login Item).
     var launchAtLogin = true
+    /// Keep the macOS Dock hidden while Nav runs; it comes back when Nav quits.
+    var hideDock = false
     /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
     /// the remote machine instead of this Mac's Nav.
     var passShortcutsToRemoteApps = true
@@ -92,6 +94,8 @@ struct Config: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         popupBorder = try c.decodeIfPresent(BorderConfig.self, forKey: .popupBorder) ?? BorderConfig()
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
+        // Older configs: adopt whatever the Dock is set to now.
+        hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
         remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []
     }
@@ -174,8 +178,7 @@ enum LoginItem {
     }
 }
 
-/// The real macOS Dock, kept out of sight so ⌘E can stand in for it. The state lives
-/// in the Dock's own preferences, not in config.json.
+/// The real macOS Dock, kept out of sight while Nav runs so ⌘E can stand in for it.
 enum MacDock {
     /// Auto-hide with a huge reveal delay: the Dock keeps running (⌘Tab, badges,
     /// notifications) but never slides in.
