@@ -24,9 +24,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+# Drop extended attributes: zipped, they turn into ._ files that break the signature.
+xattr -cr "$APP"
+
 # Sign with a real identity when available: ad-hoc signatures change on every
 # build, which makes macOS forget the Screen Recording / Accessibility grants.
 IDENTITY=${NAV_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')}
 codesign --force --sign "${IDENTITY:--}" "$APP"
 echo "Signed with: ${IDENTITY:-ad-hoc}"
-echo "Built $APP"
+# Zip for distribution, without resource forks / extended attributes.
+rm -f build/Nav.zip
+ditto -c -k --norsrc --noextattr --noqtn --keepParent "$APP" build/Nav.zip
+echo "Built $APP and build/Nav.zip"
