@@ -336,6 +336,14 @@ final class DockController {
         return menu
     }
 
+    /// Opening ~/.Trash as a plain folder can show it empty (its contents are
+    /// privacy-protected); Finder's own Trash window lists every volume's trash.
+    private func openTrash() {
+        var error: NSDictionary?
+        NSAppleScript(source: "tell application \"Finder\"\nactivate\nopen trash\nend tell")?.executeAndReturnError(&error)
+        if error != nil { NSWorkspace.shared.open(DockModel.trashURL) }
+    }
+
     private func emptyTrash() {
         hide()
         let alert = NSAlert()
@@ -371,8 +379,10 @@ final class DockController {
             } else {
                 NSWorkspace.shared.openApplication(at: item.url, configuration: .init())
             }
-        case .folder, .trash:
+        case .folder:
             NSWorkspace.shared.open(item.url)
+        case .trash:
+            openTrash()
         }
     }
 }

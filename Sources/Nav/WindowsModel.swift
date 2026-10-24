@@ -101,11 +101,7 @@ enum WindowsModel {
     /// Brings one specific window to the front. Raising a single window needs
     /// Accessibility; without it, only the app is activated.
     static func focus(_ window: WindowInfo, bundleURL: URL?) {
-        if let ax = axWindow(for: window) {
-            AXUIElementSetAttributeValue(ax, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
-            AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
-        }
+        raise(pid: window.pid, windowID: window.id)
         let running = NSRunningApplication(processIdentifier: window.pid)
         running?.unhide()
         // Launch Services can't tell instances of one app apart (your Chrome vs a
@@ -129,14 +125,26 @@ enum WindowsModel {
         return AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success
     }
 
+    /// Unminimizes the window, makes it the app's main window and raises it. Needs Accessibility.
+    static func raise(pid: pid_t, windowID: CGWindowID) {
+        guard let ax = axWindow(pid: pid, id: windowID) else { return }
+        AXUIElementSetAttributeValue(ax, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        AXUIElementSetAttributeValue(ax, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(ax, kAXRaiseAction as CFString)
+    }
+
     private static func axWindow(for window: WindowInfo) -> AXUIElement? {
+        axWindow(pid: window.pid, id: window.id)
+    }
+
+    private static func axWindow(pid: pid_t, id: CGWindowID) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
-        let app = AXUIElementCreateApplication(window.pid)
+        let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
         AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
         return ((value as? [AXUIElement]) ?? []).first { ax in
             var wid: CGWindowID = 0
-            return _AXUIElementGetWindow(ax, &wid) == .success && wid == window.id
+            return _AXUIElementGetWindow(ax, &wid) == .success && wid == id
         }
     }
 

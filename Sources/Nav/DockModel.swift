@@ -88,8 +88,11 @@ enum DockModel {
     }
 
     private static func trashItem() -> DockItem {
+        // ~/.Trash is privacy-protected (unreadable without Full Disk Access), but the
+        // Dock keeps its own "trash-full" flag, even while hidden.
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: trashURL.path)) ?? []
-        let full = contents.contains { $0 != ".DS_Store" }
+        let full = UserDefaults(suiteName: "com.apple.dock")?.bool(forKey: "trash-full") == true
+            || contents.contains { $0 != ".DS_Store" }
         let image = NSImage(named: full ? NSImage.trashFullName : NSImage.trashEmptyName) ?? icon(for: trashURL)
         return DockItem(id: "trash", kind: .trash, url: trashURL, name: "Trash", icon: image, isRunning: false)
     }

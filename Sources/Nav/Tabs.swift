@@ -205,6 +205,13 @@ enum Tabs {
                     activate
                 end tell
                 """)
+                // AppleScript's `select` doesn't always bring the window forward (e.g. when
+                // another iTerm2 window is zoomed over it). Its window id is the system
+                // window number, so raise that window directly too.
+                await MainActor.run {
+                    WindowsModel.raise(pid: tab.pid, windowID: CGWindowID(tab.scriptWindowID))
+                    NSRunningApplication(processIdentifier: tab.pid)?.activate()
+                }
             }
         case .chrome:
             DispatchQueue.global().async {
