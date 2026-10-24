@@ -37,6 +37,7 @@ Permissions (only the first time):
 **General** (in ⚙︎ Settings):
 - **Open Nav at login**: on by default. Nav registers itself as a macOS Login Item.
 - **Hide the macOS Dock**: while Nav runs, the real Dock stays out of sight (it never slides in), so ⌘E takes its place. Quitting Nav brings it back: use the ⏻ at the bottom of ⌘⇧E or **Quit Nav** in Settings.
+- **Automated browsers** (Playwright, Puppeteer, …): Chrome instances started by testing tools show up separately with a 🎭 / ⚙︎ badge, in ⌘E and ⌘⇧E. Tab lists and profiles always come from your own Chrome.
 - **Chrome profiles**: Left / Right / Off. Chrome profiles with no open window appear as avatars next to Chrome's tabs, in ⌘E and in ⌘⇧E. Click one to open a window with that profile.
 - **Pass ⌘E / ⌘⇧E to remote desktops**: on by default. While Screen Sharing, Windows App / Remote Desktop, VNC, AnyDesk, TeamViewer, Parsec, RustDesk, Jump Desktop or a VM (Parallels, VMware, UTM) is in front, Nav releases its shortcuts so they reach the remote Mac. To add more apps, put their bundle ids in `"remoteApps": [...]` in `config.json`.
 

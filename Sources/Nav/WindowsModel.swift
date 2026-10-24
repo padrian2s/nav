@@ -27,6 +27,7 @@ struct AppWindows: Identifiable {
     var windows: [WindowInfo]
     var isAudible = false
     var chromeProfiles: [ChromeProfile] = []   // Chrome only: profiles with no window open
+    var automation: AutomationKind?            // e.g. a Playwright-driven Chrome
     var id: pid_t { pid }
 }
 
@@ -75,7 +76,9 @@ enum WindowsModel {
         for g in groups.indices {
             Tabs.assign(to: &groups[g].windows, from: snapshot)
             groups[g].isAudible = playing.contains(groups[g].pid)
-            if groups[g].windows.first?.bundleID == TabApp.chrome.bundleID {
+            groups[g].automation = AutomationKind.of(groups[g].pid)
+            if groups[g].windows.first?.bundleID == TabApp.chrome.bundleID,
+               groups[g].pid == Tabs.userInstance(of: .chrome)?.processIdentifier {
                 groups[g].chromeProfiles = ChromeProfiles.closed()
             }
         }
@@ -105,7 +108,10 @@ enum WindowsModel {
         }
         let running = NSRunningApplication(processIdentifier: window.pid)
         running?.unhide()
-        if let url = bundleURL {
+        // Launch Services can't tell instances of one app apart (your Chrome vs a
+        // Playwright one), so with several running activate the process itself.
+        let instances = window.bundleID.map { NSRunningApplication.runningApplications(withBundleIdentifier: $0).count } ?? 1
+        if let url = bundleURL, instances <= 1 {
             NSWorkspace.shared.openApplication(at: url, configuration: .init())
         } else {
             running?.activate()

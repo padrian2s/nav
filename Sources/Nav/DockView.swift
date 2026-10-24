@@ -230,6 +230,11 @@ struct DockView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size, height: size)
                 .brightness(state.pressed == item.id ? -0.25 : 0)
+                .overlay(alignment: .bottomTrailing) {
+                    if let kind = item.automation {
+                        AutomationBadge(kind: kind, size: size * 0.34).offset(x: size * 0.04, y: size * 0.04)
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     if item.isAudible {
                         Image(systemName: "speaker.wave.2.fill")

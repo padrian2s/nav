@@ -189,7 +189,7 @@ final class DockController {
 
     /// Click on an icon: tab-capable apps open their tab list, everything else opens.
     private func activate(_ item: DockItem) {
-        guard item.isRunning, let app = item.bundleID.flatMap(TabApp.init(rawValue:)) else {
+        guard item.isRunning, item.automation == nil, let app = item.bundleID.flatMap(TabApp.init(rawValue:)) else {
             open(item)
             return
         }
@@ -356,8 +356,14 @@ final class DockController {
         hide()
         switch item.kind {
         case .app:
+            if let pid = item.pid, let app = NSRunningApplication(processIdentifier: pid) {
+                app.unhide()
+                app.activate()
+                return
+            }
             if let id = item.bundleID,
-               let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
+               let app = NSRunningApplication.runningApplications(withBundleIdentifier: id)
+                   .first(where: { !ProcessInfo.isAutomated($0.processIdentifier) }) {
                 app.unhide()
                 app.activate()
                 // Reopen (like a Dock click) so apps with no windows show one.

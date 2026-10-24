@@ -221,12 +221,20 @@ struct WindowsView: View {
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 48, height: 48)
+                    .overlay(alignment: .bottomTrailing) {
+                        if let kind = group.automation { AutomationBadge(kind: kind, size: 20).offset(x: 4, y: 4) }
+                    }
                 HStack(spacing: 3) {
                     if group.isAudible { AudioIcon(size: 9) }
                     Text(group.name)
                         .font(.system(size: 11, weight: .medium))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
+                }
+                if let kind = group.automation {
+                    Text(kind.name)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: kind.color))
                 }
             }
             .frame(width: m.headerWidth)
@@ -430,6 +438,22 @@ struct TabTitle: View {
                     .layoutPriority(-1)
             }
         }
+    }
+}
+
+/// Badge on an app icon driven by Playwright & co.
+struct AutomationBadge: View {
+    let kind: AutomationKind
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: kind.symbol)
+            .font(.system(size: size * 0.55, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color(nsColor: kind.color)))
+            .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+            .help("Started by \(kind.name)")
     }
 }
 

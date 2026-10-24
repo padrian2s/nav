@@ -11,6 +11,8 @@ struct DockItem: Identifiable {
     var isRunning: Bool
     var bundleID: String?
     var isAudible = false
+    var pid: pid_t?                      // set for a specific instance (e.g. a Playwright Chrome)
+    var automation: AutomationKind?
 }
 
 /// Reads the real Dock configuration so the popup mirrors it.
@@ -44,7 +46,17 @@ enum DockModel {
                 recentURLs.append(url)
             }
         }
-        let recent = recentURLs.map { appItem($0, running: runningIDs, audible: audibleIDs) }
+        var recent = recentURLs.map { appItem($0, running: runningIDs, audible: audibleIDs) }
+        // Automated instances (Playwright Chrome, …) get their own tile with a badge.
+        for app in running {
+            guard let kind = AutomationKind.of(app.processIdentifier), let url = app.bundleURL else { continue }
+            var item = appItem(url, running: runningIDs, audible: [])
+            item = DockItem(id: "auto-\(app.processIdentifier)", kind: .app, url: url,
+                            name: "\(item.name) (\(kind.name))", icon: item.icon, isRunning: true,
+                            bundleID: item.bundleID, isAudible: playing.contains(app.processIdentifier),
+                            pid: app.processIdentifier, automation: kind)
+            recent.append(item)
+        }
 
         var others = urls(from: prefs?.array(forKey: "persistent-others")).map { url in
             DockItem(id: url.path, kind: .folder, url: url, name: displayName(url),
