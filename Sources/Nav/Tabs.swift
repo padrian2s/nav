@@ -192,7 +192,8 @@ enum Tabs {
     }
 
     /// Selects the tab, brings its window to the front and activates the app.
-    static func select(_ tab: TabInfo) {
+    /// `then` runs on the main thread once the app has been scripted.
+    static func select(_ tab: TabInfo, then: (@MainActor () -> Void)? = nil) {
         switch tab.app {
         case .iTerm:
             Task {
@@ -211,14 +212,19 @@ enum Tabs {
                 await MainActor.run {
                     WindowsModel.raise(pid: tab.pid, windowID: CGWindowID(tab.scriptWindowID))
                     NSRunningApplication(processIdentifier: tab.pid)?.activate()
+                    then?()
                 }
             }
         case .chrome:
             DispatchQueue.global().async {
-                guard let (chrome, window) = chromeWindow(tab) else { return }
+                guard let (_, window) = chromeWindow(tab) else { return }
                 window.setValue(tab.index, forKey: "activeTabIndex")
                 window.setValue(1, forKey: "index")
-                chrome.activate()
+                // SBApplication.activate() leaves Chrome behind the frontmost app.
+                DispatchQueue.main.async {
+                    NSRunningApplication(processIdentifier: tab.pid)?.activate()
+                    then?()
+                }
             }
         }
     }

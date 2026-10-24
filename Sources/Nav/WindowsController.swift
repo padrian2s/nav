@@ -167,12 +167,15 @@ final class WindowsController {
 
     private func focus(_ target: SwitchTarget) {
         hide()
-        if let tab = target.tab {
-            Tabs.select(tab)
+        WindowsModel.requestAccessibilityIfNeeded()
+        let bundleURL = state.appFor(target.window)?.bundleURL
+        guard let tab = target.tab else {
+            WindowsModel.focus(target.window, bundleURL: bundleURL)
             return
         }
-        WindowsModel.requestAccessibilityIfNeeded()
-        WindowsModel.focus(target.window, bundleURL: state.appFor(target.window)?.bundleURL)
+        // Scripting picks the tab, but Chrome's `activate` doesn't reliably bring the
+        // window above a zoomed window of another app, so raise it like a window click.
+        Tabs.select(tab) { WindowsModel.focus(target.window, bundleURL: bundleURL) }
     }
 
     // MARK: Close / quit
