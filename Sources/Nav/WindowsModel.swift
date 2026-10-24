@@ -26,6 +26,7 @@ struct AppWindows: Identifiable {
     let bundleURL: URL?
     var windows: [WindowInfo]
     var isAudible = false
+    var chromeProfiles: [ChromeProfile] = []   // Chrome only: profiles with no window open
     var id: pid_t { pid }
 }
 
@@ -74,6 +75,9 @@ enum WindowsModel {
         for g in groups.indices {
             Tabs.assign(to: &groups[g].windows, from: snapshot)
             groups[g].isAudible = playing.contains(groups[g].pid)
+            if groups[g].windows.first?.bundleID == TabApp.chrome.bundleID {
+                groups[g].chromeProfiles = ChromeProfiles.closed()
+            }
         }
         return groups
     }

@@ -52,7 +52,7 @@ final class SettingsWindowController {
     func show() {
         model.config = Config.current   // pick up hand edits to the file
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 841, height: 640),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 841, height: 680),
                              styleMask: [.titled, .closable, .miniaturizable],
                              backing: .buffered, defer: false)
             w.title = "Nav Settings"
@@ -79,6 +79,12 @@ struct SettingsView: View {
             Form {
                 Section("General") {
                     Toggle("Open Nav at login", isOn: $model.config.launchAtLogin)
+                    Picker("Chrome profiles", selection: $model.config.chromeProfiles) {
+                        Text("Left").tag("left")
+                        Text("Right").tag("right")
+                        Text("Off").tag("off")
+                    }
+                    .pickerStyle(.segmented)
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Pass ⌘E / ⌘⇧E to remote desktops", isOn: $model.config.passShortcutsToRemoteApps)
                         Text("While Screen Sharing, Remote Desktop, VNC or a VM is in front, the shortcuts go to the remote Mac.")
@@ -154,7 +160,7 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .frame(width: 440)
         }
-        .frame(height: 640)
+        .frame(height: 680)
     }
 
     /// A mini popup wearing the border exactly as configured.

@@ -14,6 +14,11 @@ struct DockMetrics {
     let stackHeaderHeight: CGFloat = 32
     let stackWindowHeaderHeight: CGFloat = 20
     let stackGap: CGFloat = 10
+    let stackProfilesWidth: CGFloat = 84
+
+    func stackWidth(_ stack: DockStack) -> CGFloat {
+        stackWidth + (stack.profiles.isEmpty ? 0 : stackProfilesWidth)
+    }
 
     /// The glass row itself (icons + running dots).
     var rowHeight: CGFloat { tileSize + padding * 2 + 6 }
@@ -21,7 +26,9 @@ struct DockMetrics {
     func stackHeight(_ stack: DockStack) -> CGFloat {
         let headers = stack.windows.count > 1 ? CGFloat(stack.windows.count) * stackWindowHeaderHeight : 0
         let rows = CGFloat(stack.windows.reduce(0) { $0 + $1.tabs.count }) * stackRowHeight
-        return min(stackHeaderHeight + headers + rows + 14, 520)
+        let tabs = stackHeaderHeight + headers + rows + 14
+        let profiles = stack.profiles.isEmpty ? 0 : CGFloat(stack.profiles.count) * 50 + 34
+        return min(max(tabs, profiles), 520)
     }
 
     static func current() -> DockMetrics {
@@ -59,6 +66,7 @@ enum DockSlot: Identifiable {
 struct DockStack {
     let item: DockItem
     var windows: [TabWindow]
+    var profiles: [ChromeProfile] = []   // Chrome profiles with no window open
     var tabs: [TabInfo] { windows.flatMap(\.tabs) }
 }
 
@@ -69,6 +77,7 @@ final class DockState: ObservableObject {
     var onSelectTab: (TabInfo) -> Void = { _ in }
     var onCloseTab: (TabInfo) -> Void = { _ in }
     var onOpenApp: (DockItem) -> Void = { _ in }
+    var onOpenProfile: (ChromeProfile) -> Void = { _ in }
 
     @Published var sections: [[DockItem]] = [] { didSet { rebuild() } }
     @Published var metrics = DockMetrics.current()
@@ -153,10 +162,11 @@ struct DockView: View {
                 Spacer(minLength: 0)
                 if let stack = state.stack, let center = state.centerOfItem(stack.item.id) {
                     let available = geo.size.height - m.rowHeight - m.stackGap
-                    let x = center + (geo.size.width - state.baseRowWidth) / 2 - m.stackWidth / 2
+                    let width = m.stackWidth(stack)
+                    let x = center + (geo.size.width - state.baseRowWidth) / 2 - width / 2
                     DockStackView(state: state, stack: stack)
-                        .frame(width: m.stackWidth, height: min(m.stackHeight(stack), available))
-                        .padding(.leading, min(max(x, 8), geo.size.width - m.stackWidth - 8))
+                        .frame(width: width, height: min(m.stackHeight(stack), available))
+                        .padding(.leading, min(max(x, 8), geo.size.width - width - 8))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.bottom, m.stackGap)
                         .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
@@ -275,9 +285,41 @@ struct DockStackView: View {
     let stack: DockStack
 
     var body: some View {
-        let m = state.metrics
         let all = stack.tabs
-        VStack(spacing: 0) {
+        let left = Config.current.profilesOnLeft
+        HStack(spacing: 0) {
+            if left && !stack.profiles.isEmpty { profilesColumn; Divider().padding(.vertical, 8) }
+            tabsList(all)
+            if !left && !stack.profiles.isEmpty { Divider().padding(.vertical, 8); profilesColumn }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.3))
+                .glassEffect(.regular, in: .rect(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    /// Closed Chrome profiles, one under the other.
+    private var profilesColumn: some View {
+        VStack(spacing: 6) {
+            Text("Profiles")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(height: state.metrics.stackHeaderHeight)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 8) {
+                    ForEach(stack.profiles) { profile in
+                        ChromeProfileButton(profile: profile) { state.onOpenProfile(profile) }
+                    }
+                }
+            }
+        }
+        .frame(width: state.metrics.stackProfilesWidth)
+    }
+
+    private func tabsList(_ all: [TabInfo]) -> some View {
+        let m = state.metrics
+        return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(nsImage: stack.item.icon)
                     .resizable()
@@ -320,11 +362,7 @@ struct DockStackView: View {
                     withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
                 }
             }
-        }
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.3))
-                .glassEffect(.regular, in: .rect(cornerRadius: 14, style: .continuous))
+
         }
     }
 

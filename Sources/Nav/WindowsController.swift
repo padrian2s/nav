@@ -18,6 +18,10 @@ final class WindowsController {
         panel.contentView = host
         state.onFocus = { [weak self] target in self?.focus(target) }
         state.onClose = { [weak self] target in self?.close(target) }
+        state.onOpenProfile = { [weak self] profile in
+            self?.hide()
+            ChromeProfiles.open(profile)
+        }
         state.onOpenSettings = { [weak self] in
             self?.hide()
             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!

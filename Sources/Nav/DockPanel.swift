@@ -143,6 +143,10 @@ final class DockController {
             Tabs.select(tab)
         }
         state.onCloseTab = { [weak self] tab in self?.closeTab(tab) }
+        state.onOpenProfile = { [weak self] profile in
+            self?.hide()
+            ChromeProfiles.open(profile)
+        }
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
 
         // Keep running dots / recent apps live while the popup is open.
@@ -196,7 +200,8 @@ final class DockController {
         let cached = Tabs.cached.filter { $0.app == app }
         state.stackHovered = nil
         state.stackSelected = cached.flatMap(\.tabs).first { $0.isCurrent }?.id
-        setStack(cached.isEmpty ? nil : DockStack(item: item, windows: cached))
+        let profiles = app == .chrome ? ChromeProfiles.closed() : []
+        setStack(cached.isEmpty ? nil : DockStack(item: item, windows: cached, profiles: profiles))
         refreshStack(item, app: app, openIfEmpty: true)
     }
 
@@ -206,14 +211,15 @@ final class DockController {
             let fresh = await Tabs.fetch(app)
             Tabs.cached = Tabs.cached.filter { $0.app != app } + fresh
             guard let self, self.panel.isVisible else { return }
-            if fresh.isEmpty {
+            let profiles = app == .chrome ? ChromeProfiles.closed() : []
+            if fresh.isEmpty && profiles.isEmpty {
                 // No windows, or no Automation permission yet: behave like a normal click.
                 if openIfEmpty { self.open(item) } else { self.setStack(nil) }
                 return
             }
             guard self.state.stack == nil || self.state.stack?.item.id == item.id else { return }
             if self.state.stack == nil && !openIfEmpty { return }
-            self.setStack(DockStack(item: item, windows: fresh))
+            self.setStack(DockStack(item: item, windows: fresh, profiles: profiles))
             if let sel = self.state.stackSelected, !fresh.flatMap(\.tabs).contains(where: { $0.id == sel }) {
                 self.state.stackSelected = fresh.flatMap(\.tabs).first { $0.isCurrent }?.id
             }

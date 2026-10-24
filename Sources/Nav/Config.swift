@@ -9,6 +9,8 @@ struct Config: Codable {
     var launchAtLogin = true
     /// Keep the macOS Dock hidden while Nav runs; it comes back when Nav quits.
     var hideDock = false
+    /// Where closed Chrome profiles are shown next to Chrome's tabs: "left", "right" or "off".
+    var chromeProfiles = "right"
     /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
     /// the remote machine instead of this Mac's Nav.
     var passShortcutsToRemoteApps = true
@@ -29,6 +31,9 @@ struct Config: Codable {
         "com.vmware.fusion",                        // VMware Fusion
         "com.utmapp.UTM",                           // UTM
     ]
+
+    var profilesOnLeft: Bool { chromeProfiles == "left" }
+    var showsChromeProfiles: Bool { chromeProfiles != "off" }
 
     func isRemoteApp(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
@@ -96,6 +101,7 @@ struct Config: Codable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
         // Older configs: adopt whatever the Dock is set to now.
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
+        chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
         remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []
     }

@@ -30,7 +30,10 @@ struct WindowsMetrics {
 
     func rowWidth(_ g: AppWindows) -> CGFloat {
         headerWidth + g.windows.reduce(0) { $0 + spacing + cardWidth($1) + cardPadding * 2 }
+            + (g.chromeProfiles.isEmpty ? 0 : spacing + profilesCardWidth(g.chromeProfiles.count))
     }
+
+    func profilesCardWidth(_ count: Int) -> CGFloat { CGFloat(count) * 72 + 16 }
 
     func contentSize(_ groups: [AppWindows]) -> CGSize {
         let width = (groups.map(rowWidth).max() ?? 320) + padding * 2
@@ -51,6 +54,7 @@ final class WindowsState: ObservableObject {
     var onClose: (SwitchTarget) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}       // System Settings → Screen Recording
     var onOpenPreferences: () -> Void = {}    // Nav's own settings
+    var onOpenProfile: (ChromeProfile) -> Void = { _ in }
 
     /// Everything selectable, in display order: each window, or each tab of an iTerm2 window.
     var flat: [SwitchTarget] {
@@ -228,6 +232,10 @@ struct WindowsView: View {
             .frame(width: m.headerWidth)
             .padding(.top, max((m.rowHeight(group) - m.minRowHeight) / 2, 0))
 
+            if !group.chromeProfiles.isEmpty && Config.current.profilesOnLeft {
+                profilesCard(group)
+            }
+
             ForEach(group.windows) { window in
                 if window.tabs.isEmpty {
                     card(window, icon: group.icon, appName: group.name)
@@ -235,8 +243,34 @@ struct WindowsView: View {
                     tabsCard(window)
                 }
             }
+            if !group.chromeProfiles.isEmpty && !Config.current.profilesOnLeft {
+                profilesCard(group)
+            }
         }
         .frame(height: m.rowHeight(group), alignment: .top)
+    }
+
+    /// Closed Chrome profiles; click one to open a window with it.
+    private func profilesCard(_ group: AppWindows) -> some View {
+        let m = state.metrics
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Open profile")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach(group.chromeProfiles) { profile in
+                    ChromeProfileButton(profile: profile) { state.onOpenProfile(profile) }
+                        .frame(width: 64)
+                }
+            }
+        }
+        .padding(8)
+        .frame(width: m.profilesCardWidth(group.chromeProfiles.count), alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+        .padding(.top, m.cardPadding)
     }
 
     private func card(_ window: WindowInfo, icon: NSImage, appName: String) -> some View {
