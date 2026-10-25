@@ -29,9 +29,17 @@ xattr -cr "$APP"
 
 # Sign with a real identity when available: ad-hoc signatures change on every
 # build, which makes macOS forget the Screen Recording / Accessibility grants.
+# Order: $NAV_SIGN_IDENTITY, a valid Apple Development certificate, then the local
+# self-signed "Nav Local Signing" certificate (by hash: macOS calls it untrusted, but
+# codesign accepts it and the grants stick, since they're tied to the certificate).
 IDENTITY=${NAV_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')}
+IDENTITY=${IDENTITY:-$(security find-identity -p codesigning | awk '/"Nav Local Signing"/ {print $2; exit}')}
 codesign --force --sign "${IDENTITY:--}" "$APP"
-echo "Signed with: ${IDENTITY:-ad-hoc}"
+if [ -z "$IDENTITY" ]; then
+    echo "WARNING: ad-hoc signature. macOS will ask for Screen Recording / Accessibility again after installing." >&2
+fi
+AUTHORITY=$(codesign -dvv "$APP" 2>&1 | awk -F= '/^Authority/ && !a {a = $2} END {print a}')
+echo "Signed with: ${AUTHORITY:-ad-hoc}"
 # Zip for distribution, without resource forks / extended attributes.
 rm -f build/Nav.zip
 ditto -c -k --norsrc --noextattr --noqtn --keepParent "$APP" build/Nav.zip
