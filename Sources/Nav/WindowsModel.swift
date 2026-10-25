@@ -125,6 +125,60 @@ enum WindowsModel {
         return AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success
     }
 
+    /// Displays in macOS order (the main display first), as "1 — Name".
+    static var displays: [(index: Int, screen: NSScreen)] {
+        NSScreen.screens.enumerated().map { ($0.offset + 1, $0.element) }
+    }
+
+    /// The display showing most of the window.
+    static func display(of window: WindowInfo) -> NSScreen? {
+        NSScreen.screens.max { overlap(window.frame, $0) < overlap(window.frame, $1) }
+    }
+
+    private static func overlap(_ frame: CGRect, _ screen: NSScreen) -> CGFloat {
+        let r = frame.intersection(axRect(screen.frame))
+        return r.isNull ? 0 : r.width * r.height
+    }
+
+    /// Cocoa (bottom-left origin) → Accessibility / CGWindow (top-left origin) coordinates.
+    private static func axRect(_ rect: CGRect) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        return CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// Moves the window to another display at the same relative place, shrinking it to
+    /// fit; a window filling its display fills the new one. Needs Accessibility.
+    @discardableResult
+    static func move(_ window: WindowInfo, to screen: NSScreen) -> Bool {
+        guard let ax = axWindow(for: window) else { return false }
+        var origin = window.frame.origin, size = window.frame.size
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(ax, kAXPositionAttribute as CFString, &value) == .success {
+            AXValueGetValue(value as! AXValue, .cgPoint, &origin)
+        }
+        if AXUIElementCopyAttributeValue(ax, kAXSizeAttribute as CFString, &value) == .success {
+            AXValueGetValue(value as! AXValue, .cgSize, &size)
+        }
+        let from = axRect((display(of: window) ?? NSScreen.screens[0]).visibleFrame)
+        let to = axRect(screen.visibleFrame)
+        let filled = size.width >= from.width - 4 && size.height >= from.height - 4
+        var newSize = filled ? to.size : CGSize(width: min(size.width, to.width), height: min(size.height, to.height))
+        func fraction(_ pos: CGFloat, _ start: CGFloat, _ room: CGFloat) -> CGFloat {
+            room > 1 ? min(max((pos - start) / room, 0), 1) : 0
+        }
+        let fx = fraction(origin.x, from.minX, from.width - size.width)
+        let fy = fraction(origin.y, from.minY, from.height - size.height)
+        var newOrigin = CGPoint(x: to.minX + fx * (to.width - newSize.width), y: to.minY + fy * (to.height - newSize.height))
+
+        AXUIElementSetAttributeValue(ax, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        // Position, size, position again: some apps clamp the size to the display they're on.
+        let position = AXValueCreate(.cgPoint, &newOrigin)!
+        AXUIElementSetAttributeValue(ax, kAXPositionAttribute as CFString, position)
+        AXUIElementSetAttributeValue(ax, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &newSize)!)
+        AXUIElementSetAttributeValue(ax, kAXPositionAttribute as CFString, position)
+        return true
+    }
+
     /// Unminimizes the window, makes it the app's main window and raises it. Needs Accessibility.
     static func raise(pid: pid_t, windowID: CGWindowID) {
         guard let ax = axWindow(pid: pid, id: windowID) else { return }

@@ -205,6 +205,15 @@ final class WindowsController {
         reload(after: 0.6, pending: target)
     }
 
+    /// Moves the window (a tab's whole window) to another display and switches to it.
+    private func move(_ target: SwitchTarget, to screen: NSScreen) {
+        guard WindowsModel.move(target.window, to: screen) else {
+            WindowsModel.requestAccessibilityIfNeeded(force: true)
+            return
+        }
+        focus(target)
+    }
+
     private func quit(_ target: SwitchTarget, force: Bool) {
         guard let app = NSRunningApplication(processIdentifier: target.window.pid) else { return }
         _ = force ? app.forceTerminate() : app.terminate()
@@ -218,6 +227,21 @@ final class WindowsController {
         menu.addItem(ActionItem(target.tab == nil ? "Close Window" : "Close Tab", key: "w", modifiers: .command) { [weak self] in
             self?.close(target)
         })
+        let displays = WindowsModel.displays
+        if displays.count > 1 {
+            menu.addItem(.separator())
+            let current = WindowsModel.display(of: target.window)
+            for (index, screen) in displays {
+                let item = ActionItem("Move to Display \(index) — \(screen.localizedName)") { [weak self] in
+                    self?.move(target, to: screen)
+                }
+                if screen == current {
+                    item.state = .on
+                    item.action = nil   // already there
+                }
+                menu.addItem(item)
+            }
+        }
         menu.addItem(.separator())
         menu.addItem(ActionItem("Quit \(appName)", key: "q", modifiers: .command) { [weak self] in
             self?.quit(target, force: false)
