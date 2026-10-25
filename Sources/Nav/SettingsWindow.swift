@@ -84,6 +84,7 @@ struct SettingsView: View {
                         Text("Classic").tag("classic")
                     }
                     .pickerStyle(.segmented)
+                    Toggle("Preview on hover (Modern)", isOn: $model.config.hoverPreview)
                     Picker("Chrome profiles", selection: $model.config.chromeProfiles) {
                         Text("Left").tag("left")
                         Text("Right").tag("right")

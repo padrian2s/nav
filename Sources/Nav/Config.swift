@@ -7,6 +7,8 @@ struct Config: Codable {
     var popupBorder = BorderConfig()
     /// Look of the ⌘⇧E popup: "modern" (light, tab lists + cards) or "classic" (glass previews).
     var theme = "modern"
+    /// Modern theme: preview of the window next to the mouse over a tab/window row.
+    var hoverPreview = true
     /// Start Nav when you log in (a macOS Login Item).
     var launchAtLogin = true
     /// Keep the macOS Dock hidden while Nav runs; it comes back when Nav quits.
@@ -102,6 +104,7 @@ struct Config: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         popupBorder = try c.decodeIfPresent(BorderConfig.self, forKey: .popupBorder) ?? BorderConfig()
         theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? "modern"
+        hoverPreview = try c.decodeIfPresent(Bool.self, forKey: .hoverPreview) ?? true
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
         // Older configs: adopt whatever the Dock is set to now.
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden

@@ -48,6 +48,7 @@ final class WindowsController {
         let config = Config.current
         state.border = config.popupBorder
         state.modern = config.isModern
+        state.hoverPreview = config.hoverPreview
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil

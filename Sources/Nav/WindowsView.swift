@@ -51,6 +51,8 @@ final class WindowsState: ObservableObject {
     @Published var selected: String?
     /// Modern theme (see `ModernWindowsView`); set from the config on every show.
     @Published var modern = true
+    /// Modern: show the window preview next to the mouse over list rows.
+    var hoverPreview = true
     /// Modern: apps folded to a one-line summary (by `collapseKey`), kept across launches.
     @Published var collapsed = Set(UserDefaults.standard.stringArray(forKey: "collapsedApps") ?? []) {
         didSet { UserDefaults.standard.set(Array(collapsed), forKey: "collapsedApps") }

@@ -350,6 +350,7 @@ struct ModernWindowsView: View {
         .onContinuousHover(coordinateSpace: .named(Self.space)) { phase in
             switch phase {
             case .active(let point):
+                guard state.hoverPreview else { return }
                 state.peek.id = target.id
                 state.peek.point = point
             case .ended:
