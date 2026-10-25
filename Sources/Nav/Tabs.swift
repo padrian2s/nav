@@ -18,10 +18,16 @@ struct TabInfo: Identifiable {
     let url: String?
     let isCurrent: Bool
     var isAudible = false
+    /// iTerm2 tabs where Claude waits: the end of the screen, to spot background agents.
+    var screenTail: String?
     var id: String { "t-\(app.rawValue)-\(pid)-\(scriptWindowID)-\(index)" }
 
     /// Claude Code in an iTerm2 tab, from the glyph it puts in front of the title.
-    var claude: ClaudeState? { ClaudeState(title: title) }
+    var claude: ClaudeState? {
+        guard let state = ClaudeState(title: title) else { return nil }
+        if state == .waiting, let tail = screenTail, ClaudeState.backgroundWork(in: tail) != nil { return .background }
+        return state
+    }
 
     /// Title without Claude Code's status glyph (shown as `ClaudeStatusIcon` instead).
     var displayTitle: String {
@@ -75,7 +81,8 @@ enum Tabs {
     private static func fetchITerm(_ pid: pid_t) async -> [TabWindow] {
         let script = """
         tell application id "\(TabApp.iTerm.bundleID)"
-            set sep to character id 9
+            set us to character id 31
+            set rs to character id 30
             set out to ""
             repeat with w in windows
                 set cur to unique id of current session of current tab of w
@@ -83,18 +90,26 @@ enum Tabs {
                 repeat with t in tabs of w
                     set i to i + 1
                     set s to current session of t
-                    set out to out & (id of w) & sep & i & sep & ((unique id of s) is cur) & sep & (name of s) & linefeed
+                    set n to name of s
+                    set tail to ""
+                    if n starts with "✳" then
+                        set tail to contents of s
+                        if length of tail > 1500 then set tail to text -1500 thru -1 of tail
+                    end if
+                    set out to out & (id of w) & us & i & us & ((unique id of s) is cur) & us & n & us & tail & rs
                 end repeat
             end repeat
             return out
         end tell
         """
         var windows: [TabWindow] = []
-        for line in await osascript(script, timeout: 1.5).split(separator: "\n") {
-            let f = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
-            guard f.count == 4, let wid = Int(f[0]), let index = Int(f[1]) else { continue }
-            let tab = TabInfo(app: .iTerm, pid: pid, scriptWindowID: wid, index: index, title: f[3],
+        for record in await osascript(script, timeout: 1.5).split(separator: "\u{1E}") {
+            let f = record.split(separator: "\u{1F}", maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
+            guard f.count == 5, let wid = Int(f[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let index = Int(f[1]) else { continue }
+            var tab = TabInfo(app: .iTerm, pid: pid, scriptWindowID: wid, index: index, title: f[3],
                               url: nil, isCurrent: f[2] == "true")
+            if !f[4].isEmpty { tab.screenTail = f[4] }
             if windows.last?.scriptID == wid {
                 windows[windows.count - 1].tabs.append(tab)
             } else {
@@ -102,6 +117,45 @@ enum Tabs {
             }
         }
         return windows
+    }
+
+    /// iTerm2 tabs running Claude Code, with the text on their screen (works for
+    /// background tabs too). Only tabs whose title starts with Claude's status glyph.
+    static func fetchClaudeSessions() async -> [ClaudeSession] {
+        guard let instance = userInstance(of: .iTerm), automationAllowed(.iTerm) else { return [] }
+        let script = """
+        tell application id "\(TabApp.iTerm.bundleID)"
+            set us to character id 31
+            set rs to character id 30
+            set out to ""
+            repeat with w in windows
+                set cur to unique id of current session of current tab of w
+                set i to 0
+                repeat with t in tabs of w
+                    set i to i + 1
+                    set s to current session of t
+                    set n to name of s
+                    if n is not "" then
+                        set c to id of character 1 of n
+                        if c is 10035 or (c ≥ 9680 and c ≤ 9683) or (c ≥ 10240 and c ≤ 10495) then
+                            set out to out & (id of w) & us & i & us & ((unique id of s) is cur) & us & n & us & (contents of s) & rs
+                        end if
+                    end if
+                end repeat
+            end repeat
+            return out
+        end tell
+        """
+        let pid = instance.processIdentifier
+        return await osascript(script, timeout: 2).split(separator: "\u{1E}").compactMap { record in
+            let f = record.split(separator: "\u{1F}", maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
+            guard f.count == 5, let wid = Int(f[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let index = Int(f[1]) else { return nil }
+            var tab = TabInfo(app: .iTerm, pid: pid, scriptWindowID: wid, index: index, title: f[3],
+                              url: nil, isCurrent: f[2] == "true")
+            tab.screenTail = String(f[4].suffix(1500))
+            return tab.claude == nil ? nil : ClaudeSession(tab: tab, screen: f[4])
+        }
     }
 
     /// Scripting Bridge addresses one process by pid, unlike `tell application`,
@@ -387,7 +441,26 @@ struct AutomationKind {
 /// waiting for you and animates a spinner (◐◓◑◒, or braille dots) while working.
 /// Undocumented, so anything else means "not Claude" rather than a guess.
 enum ClaudeState {
-    case working, waiting
+    /// `background`: Claude takes input again, but agents it started are still running.
+    case working, background, waiting
+
+    /// "2 agents running" when the bottom of a waiting session says agents are still
+    /// at work (e.g. "· 2 agents still running"). Shells alone don't count: dev servers
+    /// keep running forever. The "← 2 agents" footer only lists agents, so it doesn't either.
+    private static let backgroundPattern = try! Regex(#"(\d+)\s+(?:background\s+)?(?:agents?|subagents?|tasks?)\b[^·]*?(?:running|in progress)"#)
+
+    static func backgroundWork(in screen: String) -> String? {
+        let lines = screen.components(separatedBy: "\n").suffix(14)
+        for line in lines.reversed() {
+            let l = line.lowercased()
+            guard l.contains("running") || l.contains("in progress") else { continue }
+            if let match = l.firstMatch(of: backgroundPattern), let digits = match.output[1].substring {
+                let n = Int(digits) ?? 1
+                return "\(n) agent\(n == 1 ? "" : "s") running"
+            }
+        }
+        return nil
+    }
 
     init?(title: String) {
         guard let first = title.unicodeScalars.first else { return nil }

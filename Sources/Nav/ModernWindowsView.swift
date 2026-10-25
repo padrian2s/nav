@@ -85,7 +85,7 @@ final class PeekState: ObservableObject {
 }
 
 /// Light palette from the "Window Switcher v2" design.
-private enum Palette {
+enum Palette {
     static let text = Color(rgb: 0x1E2227)
     static let secondary = Color(rgb: 0x6B7076)
     static let tertiary = Color(rgb: 0x7A7F85)

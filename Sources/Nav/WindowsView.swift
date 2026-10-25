@@ -509,7 +509,8 @@ struct AutomationBadge: View {
     }
 }
 
-/// Claude Code in a terminal tab. Green spinning arc: working, leave it. Orange dot
+/// Claude Code in a terminal tab. Green spinning arc: working, leave it. Blue dashed
+/// ring turning slowly: its agents are still working in the background. Orange dot
 /// with a ripple: your turn (finished, or asking something).
 struct ClaudeStatusIcon: View {
     let state: ClaudeState
@@ -525,6 +526,16 @@ struct ClaudeStatusIcon: View {
                     .stroke(state.color, style: StrokeStyle(lineWidth: max(size * 0.2, 1.5), lineCap: .round))
                     .rotationEffect(.degrees(t * 360))           // one turn per second
                     .padding(size * 0.1)
+            case .background:
+                ZStack {
+                    Circle()
+                        .stroke(state.color, style: StrokeStyle(lineWidth: max(size * 0.14, 1.2), dash: [size * 0.22, size * 0.16]))
+                        .rotationEffect(.degrees(t * 120))        // a third of a turn per second
+                    Circle()
+                        .fill(state.color)
+                        .frame(width: size * 0.3, height: size * 0.3)
+                }
+                .padding(size * 0.05)
             case .waiting:
                 let phase = t.truncatingRemainder(dividingBy: 1.6) / 1.6
                 ZStack {
@@ -573,6 +584,9 @@ struct ClaudeLegend: View {
             Text("Claude:")
             ClaudeStatusIcon(state: .working, size: 10)
             Text(ClaudeState.working.label)
+            ClaudeStatusIcon(state: .background, size: 10)
+                .padding(.leading, 4)
+            Text(ClaudeState.background.label)
             ClaudeStatusIcon(state: .waiting, size: 10)
                 .padding(.leading, 4)
             Text(ClaudeState.waiting.label)
@@ -582,11 +596,26 @@ struct ClaudeLegend: View {
 }
 
 extension ClaudeState {
-    var color: Color { self == .working ? Color(rgb: 0x2E9E5B) : Color(rgb: 0xE8762B) }
-    var label: String { self == .working ? "working" : "your turn" }
+    var color: Color {
+        switch self {
+        case .working: Color(rgb: 0x2E9E5B)
+        case .background: Color(rgb: 0x2F72E0)
+        case .waiting: Color(rgb: 0xE8762B)
+        }
+    }
+    var label: String {
+        switch self {
+        case .working: "working"
+        case .background: "agents running"
+        case .waiting: "your turn"
+        }
+    }
     var help: String {
-        self == .working ? "Claude is working: no need to look yet"
-                         : "Claude is waiting for you: it finished or has a question"
+        switch self {
+        case .working: "Claude is working: no need to look yet"
+        case .background: "Claude takes input, but its agents are still working in the background"
+        case .waiting: "Claude is waiting for you: it finished or has a question"
+        }
     }
 }
 
