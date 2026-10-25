@@ -145,6 +145,11 @@ final class WindowsState: ObservableObject {
         selected = all.isEmpty ? nil : all[min(index, all.count - 1)].id
     }
 
+    /// Any tab running Claude Code, so the footer explains the status colors.
+    var hasClaudeTabs: Bool {
+        groups.contains { $0.windows.contains { $0.tabs.contains { $0.claude != nil } } }
+    }
+
     func appFor(_ window: WindowInfo) -> AppWindows? {
         groups.first { $0.pid == window.pid }
     }
@@ -227,6 +232,12 @@ struct WindowsView: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
+            if state.hasClaudeTabs {
+                ClaudeLegend()
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 12)
+            }
             Spacer(minLength: 8)
             Button { NSApp.terminate(nil) } label: {
                 Image(systemName: "power")
@@ -498,32 +509,84 @@ struct AutomationBadge: View {
     }
 }
 
-/// Claude Code in a terminal tab: spinner while it works, orange dot while it waits for you.
+/// Claude Code in a terminal tab. Green spinning arc: working, leave it. Orange dot
+/// with a ripple: your turn (finished, or asking something).
 struct ClaudeStatusIcon: View {
     let state: ClaudeState
     let size: CGFloat
 
     var body: some View {
-        Group {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
             switch state {
             case .working:
-                TimelineView(.animation) { context in
-                    Image(systemName: "circle.dotted")
-                        .font(.system(size: size, weight: .bold))
-                        .foregroundStyle(Color(rgb: 0xD97757))
-                        .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 180))
-                }
-                .help("Claude is working")
-            case .waiting:
                 Circle()
-                    .fill(Color(rgb: 0xE8762B))
-                    .frame(width: size * 0.8, height: size * 0.8)
-                    .frame(width: size, height: size)
-                    .help("Claude is waiting for you")
+                    .trim(from: 0, to: 0.7)
+                    .stroke(state.color, style: StrokeStyle(lineWidth: max(size * 0.2, 1.5), lineCap: .round))
+                    .rotationEffect(.degrees(t * 360))           // one turn per second
+                    .padding(size * 0.1)
+            case .waiting:
+                let phase = t.truncatingRemainder(dividingBy: 1.6) / 1.6
+                ZStack {
+                    Circle()                                       // ripple
+                        .stroke(state.color, lineWidth: 1.5)
+                        .scaleEffect(0.5 + phase * 0.6)
+                        .opacity(1 - phase)
+                    Circle()
+                        .fill(state.color)
+                        .frame(width: size * 0.55, height: size * 0.55)
+                }
             }
         }
+        .frame(width: size, height: size)
         .fixedSize()
         .layoutPriority(1)
+        .help(state.help)
+    }
+}
+
+/// Icon + word, for the Modern lists: "working" / "your turn".
+struct ClaudeStatusPill: View {
+    let state: ClaudeState
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ClaudeStatusIcon(state: state, size: 11)
+            Text(state.label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(state.color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .background(Capsule().fill(state.color.opacity(0.14)))
+        .fixedSize()
+        .layoutPriority(1)
+        .help(state.help)
+    }
+}
+
+/// "Claude: ◠ working  ● your turn", shown in the footer when a tab runs Claude Code.
+struct ClaudeLegend: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Claude:")
+            ClaudeStatusIcon(state: .working, size: 10)
+            Text(ClaudeState.working.label)
+            ClaudeStatusIcon(state: .waiting, size: 10)
+                .padding(.leading, 4)
+            Text(ClaudeState.waiting.label)
+        }
+        .fixedSize()
+    }
+}
+
+extension ClaudeState {
+    var color: Color { self == .working ? Color(rgb: 0x2E9E5B) : Color(rgb: 0xE8762B) }
+    var label: String { self == .working ? "working" : "your turn" }
+    var help: String {
+        self == .working ? "Claude is working: no need to look yet"
+                         : "Claude is waiting for you: it finished or has a question"
     }
 }
 

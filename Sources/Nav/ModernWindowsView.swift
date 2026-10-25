@@ -324,7 +324,6 @@ struct ModernWindowsView: View {
                 .frame(width: 6, height: 6)
                 .help(active ? "Active tab in this window" : "")
             HStack(spacing: 6) {
-                if let claude = target.tab?.claude { ClaudeStatusIcon(state: claude, size: 12) }
                 if target.tab?.isAudible == true { AudioIcon(size: 10) }
                 // "Title · domain" when both fit; otherwise the domain makes room.
                 ViewThatFits(in: .horizontal) {
@@ -341,6 +340,7 @@ struct ModernWindowsView: View {
                 }
             }
             Spacer(minLength: 0)
+            if let claude = target.tab?.claude { ClaudeStatusPill(state: claude) }
             if on { closeButton(target, size: 22) }
         }
         .padding(.leading, 10)
@@ -405,6 +405,12 @@ struct ModernWindowsView: View {
             + (profiles > 0 ? ["⌥1–\(min(profiles, 9)) new window (profile)"] : [])
             + ["click app to collapse", "⌘Q quit"]
         return HStack(spacing: 4) {
+            if state.hasClaudeTabs {
+                ClaudeLegend()
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.tertiary)
+                    .padding(.trailing, 14)
+            }
             Text(hints.joined(separator: "  ·  "))
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.tertiary)
