@@ -20,6 +20,15 @@ struct TabInfo: Identifiable {
     var isAudible = false
     var id: String { "t-\(app.rawValue)-\(pid)-\(scriptWindowID)-\(index)" }
 
+    /// Claude Code in an iTerm2 tab, from the glyph it puts in front of the title.
+    var claude: ClaudeState? { ClaudeState(title: title) }
+
+    /// Title without Claude Code's status glyph (shown as `ClaudeStatusIcon` instead).
+    var displayTitle: String {
+        guard claude != nil else { return title }
+        return String(title.unicodeScalars.dropFirst().map(Character.init)).trimmingCharacters(in: .whitespaces)
+    }
+
     /// "github.com" for https://www.github.com/…
     var domain: String? {
         guard let url, let host = URL(string: url)?.host() else { return nil }
@@ -371,5 +380,21 @@ struct AutomationKind {
             return AutomationKind(name: "Puppeteer", symbol: "figure.wave", color: .systemTeal)
         }
         return AutomationKind(name: "Automation", symbol: "gearshape.2.fill", color: .systemGray)
+    }
+}
+
+/// What Claude Code is doing in a terminal tab. It sets the title to "✳ topic" while
+/// waiting for you and animates a spinner (◐◓◑◒, or braille dots) while working.
+/// Undocumented, so anything else means "not Claude" rather than a guess.
+enum ClaudeState {
+    case working, waiting
+
+    init?(title: String) {
+        guard let first = title.unicodeScalars.first else { return nil }
+        switch first.value {
+        case 0x2733: self = .waiting                                     // ✳
+        case 0x25D0...0x25D3, 0x2800...0x28FF: self = .working           // ◐◓◑◒, braille
+        default: return nil
+        }
     }
 }

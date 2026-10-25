@@ -465,8 +465,9 @@ struct TabTitle: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            if let claude = tab.claude { ClaudeStatusIcon(state: claude, size: 10) }
             if tab.isAudible { AudioIcon(size: 10) }
-            Text(tab.title.isEmpty ? (tab.url ?? "Untitled") : tab.title)
+            Text(tab.title.isEmpty ? (tab.url ?? "Untitled") : tab.displayTitle)
                 .font(.system(size: 11, weight: tab.isCurrent ? .semibold : .regular))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -494,6 +495,35 @@ struct AutomationBadge: View {
             .background(Circle().fill(Color(nsColor: kind.color)))
             .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
             .help("Started by \(kind.name)")
+    }
+}
+
+/// Claude Code in a terminal tab: spinner while it works, orange dot while it waits for you.
+struct ClaudeStatusIcon: View {
+    let state: ClaudeState
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            switch state {
+            case .working:
+                TimelineView(.animation) { context in
+                    Image(systemName: "circle.dotted")
+                        .font(.system(size: size, weight: .bold))
+                        .foregroundStyle(Color(rgb: 0xD97757))
+                        .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 180))
+                }
+                .help("Claude is working")
+            case .waiting:
+                Circle()
+                    .fill(Color(rgb: 0xE8762B))
+                    .frame(width: size * 0.8, height: size * 0.8)
+                    .frame(width: size, height: size)
+                    .help("Claude is waiting for you")
+            }
+        }
+        .fixedSize()
+        .layoutPriority(1)
     }
 }
 

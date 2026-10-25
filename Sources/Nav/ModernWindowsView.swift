@@ -185,7 +185,7 @@ struct ModernWindowsView: View {
                 .overlay(alignment: .topTrailing) {
                     if on { closeButton(target, size: 24).padding(6) }
                 }
-            Text(target.tab?.title ?? (window.title.isEmpty ? g.name : window.title))
+            Text(target.tab?.displayTitle ?? (window.title.isEmpty ? g.name : window.title))
                 .font(.system(size: 13.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -312,7 +312,7 @@ struct ModernWindowsView: View {
     private func listRow(_ target: SwitchTarget, app g: AppWindows) -> some View {
         let on = isHighlighted(target.id)
         let active = target.tab?.isCurrent ?? (g.windows.first?.id == target.window.id)
-        let title = target.tab.map { $0.title.isEmpty ? ($0.url ?? "Untitled") : $0.title }
+        let title = target.tab.map { $0.title.isEmpty ? ($0.url ?? "Untitled") : $0.displayTitle }
             ?? (target.window.title.isEmpty ? g.name : target.window.title)
         return HStack(spacing: 10) {
             Text(state.shortcut(for: target.id) ?? "")
@@ -324,6 +324,7 @@ struct ModernWindowsView: View {
                 .frame(width: 6, height: 6)
                 .help(active ? "Active tab in this window" : "")
             HStack(spacing: 6) {
+                if let claude = target.tab?.claude { ClaudeStatusIcon(state: claude, size: 12) }
                 if target.tab?.isAudible == true { AudioIcon(size: 10) }
                 // "Title · domain" when both fit; otherwise the domain makes room.
                 ViewThatFits(in: .horizontal) {
@@ -497,7 +498,7 @@ private struct PeekView: View {
     private func content(_ target: SwitchTarget) -> some View {
         let app = state.appFor(target.window)
         let showsWindow = target.tab == nil || target.tab?.isCurrent == true
-        let title = target.tab?.title ?? target.window.title
+        let title = target.tab?.displayTitle ?? target.window.title
         let sub = [app?.name, target.tab?.domain].compactMap { $0 }.joined(separator: " · ")
         return VStack(alignment: .leading, spacing: 0) {
             ZStack {
