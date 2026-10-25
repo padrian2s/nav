@@ -79,6 +79,11 @@ struct SettingsView: View {
             Form {
                 Section("General") {
                     Toggle("Open Nav at login", isOn: $model.config.launchAtLogin)
+                    Picker("Theme", selection: $model.config.theme) {
+                        Text("Modern").tag("modern")
+                        Text("Classic").tag("classic")
+                    }
+                    .pickerStyle(.segmented)
                     Picker("Chrome profiles", selection: $model.config.chromeProfiles) {
                         Text("Left").tag("left")
                         Text("Right").tag("right")

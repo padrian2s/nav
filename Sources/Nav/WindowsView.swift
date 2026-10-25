@@ -49,6 +49,14 @@ final class WindowsState: ObservableObject {
     @Published var borderOpacity: Double = 0
     @Published var hovered: String?          // SwitchTarget.id
     @Published var selected: String?
+    /// Modern theme (see `ModernWindowsView`); set from the config on every show.
+    @Published var modern = true
+    /// Modern: apps folded to a one-line summary (by `collapseKey`), kept across launches.
+    @Published var collapsed = Set(UserDefaults.standard.stringArray(forKey: "collapsedApps") ?? []) {
+        didSet { UserDefaults.standard.set(Array(collapsed), forKey: "collapsedApps") }
+    }
+    /// Modern: where the mouse is over a tab/window row, for the preview next to it.
+    let peek = PeekState()
     let metrics = WindowsMetrics()
     var onFocus: (SwitchTarget) -> Void = { _ in }
     var onClose: (SwitchTarget) -> Void = { _ in }
@@ -57,18 +65,47 @@ final class WindowsState: ObservableObject {
     var onOpenProfile: (ChromeProfile) -> Void = { _ in }
 
     /// Everything selectable, in display order: each window, or each tab of an iTerm2 window.
+    /// Modern shows one-window apps first and leaves collapsed apps out.
     var flat: [SwitchTarget] {
-        groups.flatMap { g in
-            g.windows.flatMap { w in
-                w.tabs.isEmpty ? [SwitchTarget(window: w, tab: nil)] : w.tabs.map { SwitchTarget(window: w, tab: $0) }
-            }
+        guard modern else { return groups.flatMap(targets) }
+        return singles.flatMap(targets) + multiGroups.filter { !isCollapsed($0) }.flatMap(targets)
+    }
+
+    func targets(_ g: AppWindows) -> [SwitchTarget] {
+        g.windows.flatMap { w in
+            w.tabs.isEmpty ? [SwitchTarget(window: w, tab: nil)] : w.tabs.map { SwitchTarget(window: w, tab: $0) }
         }
     }
 
-    /// Shortcut label: "1"…"9", then "0" for the 10th.
+    /// Modern: an app with a single window and at most one tab gets a card in the top row.
+    func isSingle(_ g: AppWindows) -> Bool { g.windows.count == 1 && g.windows[0].tabs.count <= 1 && g.chromeProfiles.isEmpty }
+    var singles: [AppWindows] { groups.filter(isSingle) }
+    var multiGroups: [AppWindows] { groups.filter { !isSingle($0) } }
+
+    func collapseKey(_ g: AppWindows) -> String {
+        (g.bundleURL?.path ?? g.name) + (g.automation.map { "#\($0.name)" } ?? "")
+    }
+
+    func isCollapsed(_ g: AppWindows) -> Bool { collapsed.contains(collapseKey(g)) }
+
+    func toggleCollapsed(_ g: AppWindows) {
+        let index = flat.firstIndex { $0.id == (selected ?? hovered) } ?? 0
+        let key = collapseKey(g)
+        if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) }
+        let all = flat
+        if !all.contains(where: { $0.id == selected }) {
+            selected = all.isEmpty ? nil : all[min(index, all.count - 1)].id
+        }
+        hovered = nil
+    }
+
+    /// Shortcut keys: 1…9, 0, then (Modern) A…Z.
+    static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
+
+    /// Shortcut label: "1"…"9", then "0" for the 10th, then letters in Modern.
     func shortcut(for id: String) -> String? {
-        guard let i = flat.firstIndex(where: { $0.id == id }), i < 10 else { return nil }
-        return i == 9 ? "0" : "\(i + 1)"
+        guard let i = flat.firstIndex(where: { $0.id == id }), i < (modern ? Self.shortcutKeys.count : 10) else { return nil }
+        return Self.shortcutKeys[i]
     }
 
     func setImage(_ image: NSImage, for id: CGWindowID) {
@@ -120,6 +157,7 @@ final class WindowsState: ObservableObject {
     }
 
     func move(vertical delta: Int) {
+        if modern { return move(horizontal: delta) }   // one list, top to bottom
         guard !groups.isEmpty else { return }
         let pid = flat.first { $0.id == (selected ?? hovered) }?.window.pid
         let current = groups.firstIndex { $0.pid == pid }

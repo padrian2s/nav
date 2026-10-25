@@ -10,7 +10,7 @@ final class WindowsController {
     var isVisible: Bool { panel.isVisible }
 
     init() {
-        let host = MenuHostingView(rootView: WindowsView(state: state))
+        let host = MenuHostingView(rootView: SwitcherView(state: state))
         host.menuForEvent = { [weak self] _ in
             guard let self, let t = self.state.flat.first(where: { $0.id == self.state.hovered }) else { return nil }
             return self.menu(for: t)
@@ -45,7 +45,10 @@ final class WindowsController {
     }
 
     func show() {
-        state.border = Config.current.popupBorder
+        let config = Config.current
+        state.border = config.popupBorder
+        state.modern = config.isModern
+        state.peek.id = nil
         state.hovered = nil
         state.selected = nil
 
@@ -143,19 +146,27 @@ final class WindowsController {
         let screen = panel.isVisible ? panel.screen
             : NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
         let vf = (screen ?? NSScreen.main!).visibleFrame
-        let content = state.metrics.contentSize(state.groups)
         let margin = state.border.margin * 2
+        if state.modern {
+            let content = ModernMetrics().contentSize(state, maxWidth: vf.width * 0.92)
+            return NSSize(width: content.width + margin, height: min(content.height, vf.height * 0.85) + margin)
+        }
+        let content = state.metrics.contentSize(state.groups)
         return NSSize(width: min(content.width, vf.width * 0.92) + margin,
                       height: min(content.height, vf.height * 0.85) + margin)
     }
 
     private func loadThumbnails(onlyMissing: Bool = false) async {
         let m = state.metrics
-        let windows = state.groups.flatMap(\.windows).filter { $0.tabs.isEmpty && !(onlyMissing && $0.image != nil) }
+        // Modern also previews tabbed windows (one-tab cards, the hover preview).
+        let modern = state.modern
+        let windows = state.groups.flatMap(\.windows)
+            .filter { (modern || $0.tabs.isEmpty) && !(onlyMissing && $0.image != nil) }
         await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
             for w in windows {
                 // Capture at 2x the card size for retina.
-                let size = CGSize(width: m.cardWidth(w) * 2, height: m.thumbHeight * 2)
+                let size = modern ? CGSize(width: 560, height: 350)
+                                  : CGSize(width: m.cardWidth(w) * 2, height: m.thumbHeight * 2)
                 group.addTask { (w.id, await WindowsModel.thumbnail(of: w, maxSize: size)) }
             }
             for await (id, image) in group {
@@ -234,6 +245,7 @@ final class WindowsController {
             }
             return true
         }
+        if state.modern, let handled = handleModernKey(event, mods: mods) { return handled }
         switch Int(event.keyCode) {
         case 53: hide()                                    // Esc
         case 123: state.move(horizontal: -1)               // ←
@@ -249,6 +261,21 @@ final class WindowsController {
             if all.indices.contains(i) { focus(all[i]) }
         default: return false
         }
+        return true
+    }
+
+    /// Modern extras: ⌥1…9 opens a closed Chrome profile, A…Z switch like 1…0.
+    private func handleModernKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool? {
+        if mods == .option, let i = numberRowKeys[Int(event.keyCode)] {
+            let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles ?? []
+            if profiles.indices.contains(i) { state.onOpenProfile(profiles[i]) }
+            return true
+        }
+        guard mods.isDisjoint(with: [.control, .option]),
+              let key = event.charactersIgnoringModifiers?.uppercased(), key.count == 1,
+              let i = WindowsState.shortcutKeys.firstIndex(of: key), i >= 10 else { return nil }
+        let all = state.flat
+        if all.indices.contains(i) { focus(all[i]) }
         return true
     }
 }
