@@ -39,6 +39,11 @@ final class WindowsController {
         isVisible ? hide() : show()
     }
 
+    /// Next (1) / previous (-1) window, for ⌘Tab pressed again while the view is open.
+    func moveSelection(_ step: Int) {
+        state.move(horizontal: step)
+    }
+
     func hide() {
         loadTask?.cancel()
         panel.dismiss()

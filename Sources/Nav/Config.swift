@@ -15,6 +15,8 @@ struct Config: Codable {
     var hideDock = false
     /// Where closed Chrome profiles are shown next to Chrome's tabs: "left", "right" or "off".
     var chromeProfiles = "right"
+    /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
+    var commandTab = true
     /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
     /// the remote machine instead of this Mac's Nav.
     var passShortcutsToRemoteApps = true
@@ -109,6 +111,7 @@ struct Config: Codable {
         // Older configs: adopt whatever the Dock is set to now.
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
+        commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
         remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []
     }

@@ -9,6 +9,7 @@ final class SettingsModel: ObservableObject {
             config.save()
             if config.launchAtLogin != oldValue.launchAtLogin { LoginItem.sync(config.launchAtLogin) }
             if config.hideDock != oldValue.hideDock, config.hideDock != MacDock.isHidden { MacDock.setHidden(config.hideDock) }
+            if config.commandTab != oldValue.commandTab { updateHotKeysForFrontmostApp() }
         }
     }
     /// Border opacity in the preview, so the fade can be replayed.
@@ -91,6 +92,12 @@ struct SettingsView: View {
                         Text("Off").tag("off")
                     }
                     .pickerStyle(.segmented)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("⌘Tab opens Nav's windows", isOn: $model.config.commandTab)
+                        Text("⌘Tab / ⌘⇧Tab show the ⌘⇧E view; ⌘⇧E shows the macOS app switcher instead.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Pass ⌘E / ⌘⇧E to remote desktops", isOn: $model.config.passShortcutsToRemoteApps)
                         Text("While Screen Sharing, Remote Desktop, VNC or a VM is in front, the shortcuts go to the remote Mac.")
