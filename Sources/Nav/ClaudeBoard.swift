@@ -31,7 +31,6 @@ struct ClaudeSession: Identifiable {
 final class ClaudeBoardState: ObservableObject {
     @Published var sessions: [ClaudeSession] = []
     @Published var loaded = false
-    @Published var hovered: String?
     @Published var selected: String?
     @Published var border = Config.BorderConfig()
     @Published var borderOpacity: Double = 0
@@ -43,6 +42,8 @@ final class ClaudeBoardState: ObservableObject {
         if !sessions.contains(where: { $0.id == selected }) { selected = sessions.first?.id }
     }
 
+    var current: ClaudeSession? { sessions.first { $0.id == selected } ?? sessions.first }
+
     func shortcut(for id: String) -> String? {
         guard let i = sessions.firstIndex(where: { $0.id == id }), i < 10 else { return nil }
         return WindowsState.shortcutKeys[i]
@@ -50,32 +51,32 @@ final class ClaudeBoardState: ObservableObject {
 
     func move(_ delta: Int) {
         guard !sessions.isEmpty else { return }
-        let i = sessions.firstIndex { $0.id == (hovered ?? selected) } ?? (delta > 0 ? -1 : sessions.count)
+        let i = sessions.firstIndex { $0.id == selected } ?? (delta > 0 ? -1 : sessions.count)
         selected = sessions[(i + delta + sessions.count) % sessions.count].id
-        hovered = nil
     }
 }
 
 struct ClaudeMetrics {
-    let cardWidth: CGFloat = 340
-    let screenHeight: CGFloat = 196
+    let listWidth: CGFloat = 330
+    let rowHeight: CGFloat = 58
+    let rowSpacing: CGFloat = 6
+    let previewWidth: CGFloat = 820
+    let previewHeight: CGFloat = 560
     let spacing: CGFloat = 16
     let padding: CGFloat = 22
     let headerHeight: CGFloat = 34
     let footerHeight: CGFloat = 34
-    var cardHeight: CGFloat { screenHeight + headerHeight + 30 }
-
-    func columns(_ count: Int) -> Int { count <= 3 ? max(count, 1) : count <= 8 ? (count + 1) / 2 : 4 }
 
     func contentSize(_ count: Int) -> CGSize {
-        let cols = CGFloat(columns(count))
-        let rows = CGFloat(max((count + columns(count) - 1) / columns(count), 1))
-        return CGSize(width: max(cols * cardWidth + (cols - 1) * spacing + padding * 2, 420),
-                      height: headerHeight + rows * cardHeight + (rows - 1) * spacing + padding * 2 + footerHeight)
+        let n = CGFloat(max(count, 1))
+        let list = n * rowHeight + (n - 1) * rowSpacing
+        return CGSize(width: padding * 2 + listWidth + spacing + previewWidth,
+                      height: headerHeight + max(list, previewHeight) + padding * 2 + footerHeight)
     }
 }
 
-/// ⌥⌘E: every Claude Code session in iTerm2 as a card with its screen.
+/// ⌥⌘E: every Claude Code session in iTerm2 in a list, and the hovered / selected one's
+/// screen in a big terminal next to it.
 struct ClaudeBoardView: View {
     @ObservedObject var state: ClaudeBoardState
     private let m = ClaudeMetrics()
@@ -89,15 +90,17 @@ struct ClaudeBoardView: View {
                     .foregroundStyle(Palette.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(m.cardWidth), spacing: m.spacing),
-                                             count: m.columns(state.sessions.count)),
-                              spacing: m.spacing) {
-                        ForEach(state.sessions) { card($0) }
+                HStack(alignment: .top, spacing: m.spacing) {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: m.rowSpacing) {
+                            ForEach(state.sessions) { row($0) }
+                        }
                     }
-                    .padding(.horizontal, m.padding)
-                    .padding(.bottom, m.padding)
+                    .frame(width: m.listWidth)
+                    if let session = state.current { preview(session) }
                 }
+                .padding(.horizontal, m.padding)
+                .padding(.bottom, m.padding)
             }
             footer
         }
@@ -146,9 +149,10 @@ struct ClaudeBoardView: View {
         .background(Capsule().fill(s.color.opacity(0.14)))
     }
 
-    private func card(_ session: ClaudeSession) -> some View {
-        let on = state.hovered == session.id || (state.hovered == nil && state.selected == session.id)
-        return VStack(alignment: .leading, spacing: 6) {
+    /// Hovering a row shows its screen in the big preview; it stays there when the mouse leaves.
+    private func row(_ session: ClaudeSession) -> some View {
+        let on = state.selected == session.id
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 if let key = state.shortcut(for: session.id) {
                     Text(key)
@@ -164,26 +168,22 @@ struct ClaudeBoardView: View {
                 Spacer(minLength: 4)
                 ClaudeStatusPill(state: session.state)
             }
-            .frame(height: 24)
-            terminal(session)
             Text(statusLine(session))
                 .font(.system(size: 11.5))
                 .foregroundStyle(session.state.color)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(height: 14)
+                .padding(.leading, state.shortcut(for: session.id) == nil ? 0 : 30)
         }
-        .padding(8)
-        .frame(width: m.cardWidth)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? Palette.selected : Palette.list))
+        .padding(.horizontal, 10)
+        .frame(width: m.listWidth, height: m.rowHeight, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Palette.selected : Palette.list))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(session.state.color.opacity(session.state == .waiting ? 0.7 : 0), lineWidth: 1.5)
         )
         .contentShape(Rectangle())
-        .onHover { inside in
-            if inside { state.hovered = session.id } else if state.hovered == session.id { state.hovered = nil }
-        }
+        .onHover { inside in if inside { state.selected = session.id } }
         .onTapGesture { state.onFocus(session) }
         .help(session.tab.displayTitle)
     }
@@ -201,29 +201,49 @@ struct ClaudeBoardView: View {
         return t.hasSuffix(" (claude)") ? String(t.dropLast(9)) : t
     }
 
-    /// The tab's screen as a little terminal, newest lines at the bottom.
-    private func terminal(_ session: ClaudeSession) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 0)
-            ForEach(Array(session.preview.suffix(24).enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(size: 7.5, design: .monospaced))
-                    .foregroundStyle(Color(rgb: 0xD8DEE6))
+    /// The session's screen as a big terminal, newest lines at the bottom. Click opens the tab.
+    private func preview(_ session: ClaudeSession) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(title(session))
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                ClaudeStatusPill(state: session.state)
+                Spacer(minLength: 8)
+                Text(statusLine(session))
+                    .font(.system(size: 12))
+                    .foregroundStyle(session.state.color)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+            .frame(height: 22)
+            // An overlay doesn't size its parent: lines that don't fit are cut off at the top.
+            Color(rgb: 0x1C1F24)
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(session.preview.suffix(80).enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color(rgb: 0xD8DEE6))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                    .padding(12)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .padding(8)
-        .frame(width: m.cardWidth - 16, height: m.screenHeight, alignment: .bottomLeading)
-        .background(Color(rgb: 0x1C1F24))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: m.previewHeight, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { state.onFocus(session) }
     }
 
     private var footer: some View {
         HStack(spacing: 4) {
             ClaudeLegend()
                 .padding(.trailing, 14)
-            Text(["1–0 switch", "←→ select", "↵ open", "esc close"].joined(separator: "  ·  "))
+            Text(["hover to preview", "1–0 switch", "↑↓ select", "↵ open", "esc close"].joined(separator: "  ·  "))
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -260,7 +280,7 @@ final class ClaudeBoardController {
 
     func show() {
         state.border = Config.current.popupBorder
-        state.hovered = nil
+        state.selected = nil
         state.loaded = false
         Task { @MainActor in
             state.setSessions(await Tabs.fetchClaudeSessions())
@@ -320,7 +340,7 @@ final class ClaudeBoardController {
         case 123, 126, 33: state.move(-1)                      // ←, ↑, [
         case 124, 125, 48, 30: state.move(1)                   // →, ↓, Tab, ]
         case 36, 76:                                           // Return, Enter
-            if let s = state.sessions.first(where: { $0.id == (state.hovered ?? state.selected) }) { focus(s) }
+            if let s = state.current { focus(s) }
         case let code where numberRowKeys[code] != nil:        // 1…9, 0
             let i = numberRowKeys[code]!
             if state.sessions.indices.contains(i) { focus(state.sessions[i]) }
