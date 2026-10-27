@@ -44,9 +44,9 @@ final class WindowsController {
         isVisible ? hide() : show()
     }
 
-    /// Next (1) / previous (-1) window, for ⌘Tab pressed again while the view is open.
+    /// Next (1) / previous (-1) app, for ⌘Tab / ⌘⇧Tab pressed again while the view is open.
     func moveSelection(_ step: Int) {
-        state.move(horizontal: step)
+        state.move(app: step)
     }
 
     func hide() {

@@ -205,6 +205,20 @@ final class WindowsState: ObservableObject {
         hovered = nil
     }
 
+    /// ⌘Tab / ⌘⇧Tab: next / previous app, in display order; lands on the active tab of its front window.
+    func move(app delta: Int) {
+        let all = flat
+        var apps: [pid_t] = []
+        for t in all where !apps.contains(t.window.pid) { apps.append(t.window.pid) }
+        guard !apps.isEmpty else { return }
+        let pid = all.first { $0.id == (selected ?? hovered) }?.window.pid
+        let i = pid.flatMap { apps.firstIndex(of: $0) } ?? (delta > 0 ? -1 : apps.count)
+        let next = apps[(i + delta + apps.count) % apps.count]
+        let targets = all.filter { $0.window.pid == next }
+        selected = (targets.first { $0.window.id == targets[0].window.id && $0.tab?.isCurrent == true } ?? targets[0]).id
+        hovered = nil
+    }
+
     func move(vertical delta: Int) {
         if modern { return move(horizontal: delta) }   // one list, top to bottom
         guard !groups.isEmpty else { return }
