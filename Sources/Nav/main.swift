@@ -5,6 +5,8 @@ import Carbon.HIToolbox
 let dockHotKey = (code: kVK_ANSI_E, modifiers: cmdKey)
 let windowsHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | shiftKey)
 let claudeHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | optionKey)
+// From any app: switches between your two most used apps (keys 1 and 2 in the windows view).
+let topTwoHotKey = (code: kVK_Tab, modifiers: optionKey)
 // With `commandTab` on, these open the windows view and ⌘⇧E shows the macOS app switcher.
 let commandTabHotKey = (code: kVK_Tab, modifiers: cmdKey)
 let commandShiftTabHotKey = (code: kVK_Tab, modifiers: cmdKey | shiftKey)
@@ -53,6 +55,7 @@ let hotKeys = [
     HotKey(keyCode: dockHotKey.code, modifiers: dockHotKey.modifiers, action: toggleDock),
     HotKey(keyCode: windowsHotKey.code, modifiers: windowsHotKey.modifiers, action: windowsShortcut),
     HotKey(keyCode: claudeHotKey.code, modifiers: claudeHotKey.modifiers, action: toggleClaudeBoard),
+    HotKey(keyCode: topTwoHotKey.code, modifiers: topTwoHotKey.modifiers, action: AppUsage.switchTopTwo),
 ]
 let tabHotKeys = [
     HotKey(keyCode: commandTabHotKey.code, modifiers: commandTabHotKey.modifiers) { commandTab(step: 1) },
