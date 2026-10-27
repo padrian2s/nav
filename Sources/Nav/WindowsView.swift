@@ -65,6 +65,9 @@ final class WindowsState: ObservableObject {
     var onOpenSettings: () -> Void = {}       // System Settings → Screen Recording
     var onOpenPreferences: () -> Void = {}    // Nav's own settings
     var onOpenProfile: (ChromeProfile) -> Void = { _ in }
+    /// Whether ⌘Tab is Nav's (true) or the macOS app switcher; the footer button flips it.
+    @Published var commandTab = true
+    var onToggleCommandTab: () -> Void = {}
 
     /// Everything selectable, in display order: each window, or each tab of an iTerm2 window.
     /// Modern shows one-window apps first and leaves collapsed apps out.

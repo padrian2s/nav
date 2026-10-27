@@ -418,6 +418,19 @@ struct ModernWindowsView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
+            Button(action: state.onToggleCommandTab) {
+                Text(state.commandTab ? "⌘⇥ Nav" : "⌘⇥ macOS")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(Capsule().fill(Palette.pill))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(state.commandTab ? "⌘Tab opens Nav — click to use the macOS app switcher"
+                                   : "⌘Tab is the macOS app switcher — click to use Nav")
             footerButton("power", help: "Quit Nav (brings the Dock back)") { NSApp.terminate(nil) }
             footerButton("gearshape", help: "Nav Settings (⌘,)") { state.onOpenPreferences() }
         }

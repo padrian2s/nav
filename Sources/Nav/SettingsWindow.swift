@@ -67,6 +67,12 @@ final class SettingsWindowController {
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
     }
+
+    /// ⌘Tab shows Nav's windows view (true) or the macOS app switcher; saved and applied now.
+    func setCommandTab(_ on: Bool) {
+        model.config = Config.current
+        model.config.commandTab = on
+    }
 }
 
 struct SettingsView: View {
@@ -93,8 +99,14 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     VStack(alignment: .leading, spacing: 2) {
-                        Toggle("⌘Tab opens Nav's windows", isOn: $model.config.commandTab)
-                        Text("⌘Tab / ⌘⇧Tab show the ⌘⇧E view; ⌘⇧E shows the macOS app switcher instead.")
+                        Picker("⌘Tab switcher", selection: $model.config.commandTab) {
+                            Text("Nav").tag(true)
+                            Text("macOS").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        Text(model.config.commandTab
+                             ? "⌘Tab / ⌘⇧Tab show Nav's windows view; ⌘⇧E shows the macOS app switcher."
+                             : "⌘Tab is the macOS app switcher; ⌘⇧E shows Nav's windows view.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

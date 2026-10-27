@@ -31,6 +31,11 @@ final class WindowsController {
             self?.hide()
             SettingsWindowController.shared.show()
         }
+        state.onToggleCommandTab = { [weak self] in
+            guard let self else { return }
+            self.state.commandTab.toggle()
+            SettingsWindowController.shared.setCommandTab(self.state.commandTab)
+        }
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         Task { @MainActor in Tabs.cached = await Tabs.fetchAll() }   // warm the cache for the first popup
     }
@@ -54,6 +59,7 @@ final class WindowsController {
         state.border = config.popupBorder
         state.modern = config.isModern
         state.hoverPreview = config.hoverPreview
+        state.commandTab = config.commandTab
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil
