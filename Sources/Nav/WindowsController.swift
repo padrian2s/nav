@@ -60,6 +60,7 @@ final class WindowsController {
         state.modern = config.isModern
         state.hoverPreview = config.hoverPreview
         state.commandTab = config.commandTab
+        state.pinnedApps = Set(config.pinnedApps)
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil

@@ -118,12 +118,13 @@ struct ModernWindowsView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: m.rowGap) {
+                        ForEach(state.pinned) { row($0) }
                         if !state.singles.isEmpty {
                             FlowLayout(spacing: m.cardSpacing, lineSpacing: 10) {
                                 ForEach(state.singles) { card($0) }
                             }
                         }
-                        ForEach(state.multiGroups) { row($0) }
+                        ForEach(state.unpinnedGroups) { row($0) }
                     }
                     .padding(.horizontal, m.hPadding)
                     .padding(.top, m.topPadding)

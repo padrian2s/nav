@@ -75,7 +75,7 @@ final class WindowsState: ObservableObject {
     /// Modern shows one-window apps first and leaves collapsed apps out.
     var flat: [SwitchTarget] {
         guard modern else { return groups.flatMap(targets) }
-        return singles.flatMap(targets) + multiGroups.filter { !isCollapsed($0) }.flatMap(targets)
+        return (pinned + singles + unpinnedGroups).filter { !isCollapsed($0) }.flatMap(targets)
     }
 
     func targets(_ g: AppWindows) -> [SwitchTarget] {
@@ -84,10 +84,19 @@ final class WindowsState: ObservableObject {
         }
     }
 
-    /// Modern: an app with a single window and at most one tab gets a card in the top row.
-    func isSingle(_ g: AppWindows) -> Bool { g.windows.count == 1 && g.windows[0].tabs.count <= 1 && g.chromeProfiles.isEmpty }
+    /// Modern: an app with a single window and at most one tab gets a card in the top row,
+    /// unless it's pinned (see `Config.pinnedApps`): pinned apps are rows above the cards.
+    func isSingle(_ g: AppWindows) -> Bool {
+        g.windows.count == 1 && g.windows[0].tabs.count <= 1 && g.chromeProfiles.isEmpty && !isPinned(g)
+    }
+    func isPinned(_ g: AppWindows) -> Bool {
+        g.automation == nil && g.windows.first?.bundleID.map(pinnedApps.contains) == true
+    }
+    var pinnedApps = Set(Config.current.pinnedApps)
     var singles: [AppWindows] { groups.filter(isSingle) }
     var multiGroups: [AppWindows] { groups.filter { !isSingle($0) } }
+    var pinned: [AppWindows] { groups.filter(isPinned) }
+    var unpinnedGroups: [AppWindows] { multiGroups.filter { !isPinned($0) } }
 
     func collapseKey(_ g: AppWindows) -> String {
         (g.bundleURL?.path ?? g.name) + (g.automation.map { "#\($0.name)" } ?? "")

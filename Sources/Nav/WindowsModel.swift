@@ -34,7 +34,8 @@ struct AppWindows: Identifiable {
 enum WindowsModel {
     static var hasScreenRecording: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// Ordinary app windows grouped by app, most recently used app first.
+    /// Ordinary app windows grouped by app: the pinned apps (most used first), then the
+    /// rest, most recently used first.
     static func load(tabs snapshot: [TabWindow]) async throws -> [AppWindows] {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
 
@@ -82,7 +83,10 @@ enum WindowsModel {
                 groups[g].chromeProfiles = ChromeProfiles.closed()
             }
         }
-        return groups
+        let pinned = Set(Config.current.pinnedApps), scores = AppUsage.scores
+        func isPinned(_ g: AppWindows) -> Bool { g.automation == nil && g.windows.first?.bundleID.map(pinned.contains) == true }
+        func score(_ g: AppWindows) -> Double { g.windows.first?.bundleID.flatMap { scores[$0] } ?? 0 }
+        return groups.filter(isPinned).sorted { score($0) > score($1) } + groups.filter { !isPinned($0) }
     }
 
     static func thumbnail(of window: WindowInfo, maxSize: CGSize) async -> NSImage? {

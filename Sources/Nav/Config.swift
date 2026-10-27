@@ -17,6 +17,8 @@ struct Config: Codable {
     var chromeProfiles = "right"
     /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
     var commandTab = true
+    /// Bundle ids always at the top of the windows view (the most used of them first).
+    var pinnedApps = ["com.googlecode.iterm2", "com.google.Chrome"]
     /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
     /// the remote machine instead of this Mac's Nav.
     var passShortcutsToRemoteApps = true
@@ -112,6 +114,7 @@ struct Config: Codable {
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
+        pinnedApps = try c.decodeIfPresent([String].self, forKey: .pinnedApps) ?? Config().pinnedApps
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
         remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []
     }
