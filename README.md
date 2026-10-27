@@ -9,6 +9,8 @@ A copy of the macOS Dock that pops up next to the cursor, plus a window switcher
 
 To navigate: ← → / Tab, ↑ ↓ (in the window view), Return. In the window view, **1…4** (or **⌘1…⌘4**, so you can keep ⌘ held after ⌘Tab) go to the apps you switch to most: Nav learns them from what you pick (iTerm2 and Chrome to start) and shows the number on the app. The next keys up to **0** (then A–Z in Modern) jump straight to a window, and **[ ]** move the selection to the previous or next window. With the view open from ⌘Tab, **⌘Tab / ⌘⇧Tab** again jump to the next / previous app (to the active tab of its front window). **⌘W** closes the selected window or iTerm2 tab and **⌘Q** quits the app (**⌥⌘Q** force-quits it). The same actions are on the ✕ that appears on hover and in the right-click menu. Esc, the same shortcut again, or a click outside closes the popup.
 
+Nav also has an icon in the menu bar. Its menu opens the windows view, the Dock and the Claude sessions, switches ⌘Tab between Nav and macOS, and has Settings and Quit.
+
 ## Install
 
 Download `Nav.zip` from [Releases](../../releases/latest), then:
