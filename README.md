@@ -7,7 +7,7 @@ A copy of the macOS Dock that pops up next to the cursor, plus a window switcher
 | **⌘E** | A Dock popup next to the cursor (your real Dock's pinned and recent apps, folders and Trash). Right-click an icon for the Dock menu. Clicking **Chrome** or **iTerm2** opens a list of their tabs above the icon (↑ ↓ / [ ], 1…9, Return, ⌘W). |
 | **⌘⇧E** | Previews of every open window, grouped by app. Chrome and iTerm2 windows appear as compact tab lists. Click one to bring that window or tab to the front. |
 
-To navigate: ← → / Tab, ↑ ↓ (in the window view), Return. In the window view, **1…9, 0** jump straight to that window and **[ ]** move the selection to the previous or next window. **⌘W** closes the selected window or iTerm2 tab and **⌘Q** quits the app (**⌥⌘Q** force-quits it). The same actions are on the ✕ that appears on hover and in the right-click menu. Esc, the same shortcut again, or a click outside closes the popup.
+To navigate: ← → / Tab, ↑ ↓ (in the window view), Return. In the window view, **1…9, 0** jump straight to that window and **[ ]** move the selection to the previous or next window. **⌘1…⌘4** jump to the apps you switch to most (Nav learns them from what you pick; iTerm2 and Chrome to start), so after ⌘Tab you can keep ⌘ held and press a number. **⌘W** closes the selected window or iTerm2 tab and **⌘Q** quits the app (**⌥⌘Q** force-quits it). The same actions are on the ✕ that appears on hover and in the right-click menu. Esc, the same shortcut again, or a click outside closes the popup.
 
 ## Install
 

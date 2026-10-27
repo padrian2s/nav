@@ -401,7 +401,8 @@ struct ModernWindowsView: View {
 
     private var footer: some View {
         let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles.count ?? 0
-        let hints = ["1–0 A–Z switch", "↑↓ select", "↵ open", "⌘W close"]
+        let frequent = AppUsage.top(4).enumerated().map { "⌘\($0.offset + 1) \(AppUsage.name(of: $0.element))" }
+        let hints = frequent + ["1–0 A–Z switch", "↑↓ select", "↵ open", "⌘W close"]
             + (profiles > 0 ? ["⌥1–\(min(profiles, 9)) new window (profile)"] : [])
             + ["click app to collapse", "⌘Q quit"]
         return HStack(spacing: 4) {

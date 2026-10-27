@@ -182,8 +182,23 @@ final class WindowsController {
         }
     }
 
+    /// ⌘1…⌘4: the n-th most used app — its frontmost window, or launches it if it has none.
+    private func focusFrequent(_ n: Int) {
+        let apps = AppUsage.top(4)
+        guard apps.indices.contains(n) else { return }
+        let bundleID = apps[n]
+        if let g = state.groups.first(where: { $0.automation == nil && $0.windows.first?.bundleID == bundleID }) {
+            return focus(SwitchTarget(window: g.windows[0], tab: nil))
+        }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
+        hide()
+        AppUsage.record(bundleID)
+        NSWorkspace.shared.openApplication(at: url, configuration: .init())
+    }
+
     private func focus(_ target: SwitchTarget) {
         hide()
+        AppUsage.record(target.window.bundleID)
         WindowsModel.requestAccessibilityIfNeeded()
         let bundleURL = state.appFor(target.window)?.bundleURL
         guard let tab = target.tab else {
@@ -271,6 +286,8 @@ final class WindowsController {
             case 13: if let t = current { close(t) }                                   // ⌘W
             case 12: if let t = current { quit(t, force: mods.contains(.option)) }     // ⌘Q, ⌥⌘Q
             case 43: state.onOpenPreferences()                                         // ⌘,
+            case let code where (numberRowKeys[code] ?? 9) < 4:                         // ⌘1…⌘4: most used apps
+                focusFrequent(numberRowKeys[code]!)
             default: return false
             }
             return true
