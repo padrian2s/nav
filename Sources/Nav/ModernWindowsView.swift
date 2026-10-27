@@ -211,8 +211,12 @@ struct ModernWindowsView: View {
     }
 
     private func hotkeyChip(_ id: String) -> some View {
+        keyChip(state.shortcut(for: id))
+    }
+
+    private func keyChip(_ key: String?) -> some View {
         Group {
-            if let key = state.shortcut(for: id) {
+            if let key {
                 Text(key)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color(rgb: 0x2A2E33))
@@ -252,6 +256,7 @@ struct ModernWindowsView: View {
             Button { state.toggleCollapsed(g) } label: {
                 VStack(spacing: 4) {
                     AppIcon(group: g, size: 44)
+                        .overlay(alignment: .topLeading) { keyChip(state.appShortcut(g)).offset(x: -14, y: -6) }
                     HStack(spacing: 3) {
                         if g.isAudible { AudioIcon(size: 9) }
                         Text(g.name)
@@ -401,8 +406,7 @@ struct ModernWindowsView: View {
 
     private var footer: some View {
         let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles.count ?? 0
-        let frequent = AppUsage.top(4).enumerated().map { "⌘\($0.offset + 1) \(AppUsage.name(of: $0.element))" }
-        let hints = frequent + ["1–0 A–Z switch", "↑↓ select", "↵ open", "⌘W close"]
+        let hints = ["1–0 A–Z switch", "↑↓ select", "↵ open", "⌘W close"]
             + (profiles > 0 ? ["⌥1–\(min(profiles, 9)) new window (profile)"] : [])
             + ["click app to collapse", "⌘Q quit"]
         return HStack(spacing: 4) {

@@ -43,7 +43,9 @@ struct WindowsMetrics {
 }
 
 final class WindowsState: ObservableObject {
-    @Published var groups: [AppWindows] = []
+    @Published var groups: [AppWindows] = [] { didSet { rankFrequent() } }
+    /// The most used apps here (see `AppUsage`), up to 4: keys 1…4 (and ⌘1…⌘4) switch to them.
+    private(set) var frequent: [pid_t] = []
     @Published var needsPermission = false
     @Published var border = Config.BorderConfig()
     @Published var borderOpacity: Double = 0
@@ -107,10 +109,47 @@ final class WindowsState: ObservableObject {
     /// Shortcut keys: 1…9, 0, then (Modern) A…Z.
     static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
 
-    /// Shortcut label: "1"…"9", then "0" for the 10th, then letters in Modern.
+    private func rankFrequent() {
+        let scores = AppUsage.scores
+        func score(_ g: AppWindows) -> Double { g.windows.first?.bundleID.flatMap { scores[$0] } ?? 0 }
+        var seen = Set<String>()
+        let ranked = groups.filter { g in
+            guard g.automation == nil, score(g) > 0, let id = g.windows.first?.bundleID else { return false }
+            return seen.insert(id).inserted
+        }
+        let pids = Array(ranked.sorted { score($0) > score($1) }.prefix(4).map(\.pid))
+        if pids != frequent { frequent = pids }
+    }
+
+    func appShortcut(_ g: AppWindows) -> String? {
+        frequent.firstIndex(of: g.pid).map { Self.shortcutKeys[$0] }
+    }
+
+    /// Modern: a frequent one-window app's card is the app, so it shows the app's key.
+    private func isAppCard(_ t: SwitchTarget) -> Bool {
+        modern && frequent.contains(t.window.pid) && groups.contains { $0.pid == t.window.pid && isSingle($0) }
+    }
+
+    /// Windows/tabs with a key of their own, numbered after the frequent apps.
+    var keyed: [SwitchTarget] { flat.filter { !isAppCard($0) } }
+
+    /// Shortcut label: the frequent apps take "1"…"4", then windows get the next keys up to "0",
+    /// then letters in Modern.
     func shortcut(for id: String) -> String? {
-        guard let i = flat.firstIndex(where: { $0.id == id }), i < (modern ? Self.shortcutKeys.count : 10) else { return nil }
-        return Self.shortcutKeys[i]
+        guard let t = flat.first(where: { $0.id == id }) else { return nil }
+        if isAppCard(t) { return frequent.firstIndex(of: t.window.pid).map { Self.shortcutKeys[$0] } }
+        guard let i = keyed.firstIndex(where: { $0.id == id }) else { return nil }
+        let k = frequent.count + i
+        return k < (modern ? Self.shortcutKeys.count : 10) ? Self.shortcutKeys[k] : nil
+    }
+
+    /// What key `i` (0 = "1") switches to: a frequent app's front window, or a window/tab.
+    func target(forKey i: Int) -> SwitchTarget? {
+        if frequent.indices.contains(i) {
+            return groups.first { $0.pid == frequent[i] }.map { SwitchTarget(window: $0.windows[0], tab: nil) }
+        }
+        let all = keyed, k = i - frequent.count
+        return all.indices.contains(k) ? all[k] : nil
     }
 
     func setImage(_ image: NSImage, for id: CGWindowID) {
@@ -277,6 +316,15 @@ struct WindowsView: View {
                     .frame(width: 48, height: 48)
                     .overlay(alignment: .bottomTrailing) {
                         if let kind = group.automation { AutomationBadge(kind: kind, size: 20).offset(x: 4, y: 4) }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if let key = state.appShortcut(group) {
+                            Text(key)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .frame(minWidth: 22, minHeight: 22)
+                                .glassEffect(.regular, in: .rect(cornerRadius: 6, style: .continuous))
+                                .offset(x: -8, y: -6)
+                        }
                     }
                 HStack(spacing: 3) {
                     if group.isAudible { AudioIcon(size: 9) }

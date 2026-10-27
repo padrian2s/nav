@@ -188,20 +188,6 @@ final class WindowsController {
         }
     }
 
-    /// ⌘1…⌘4: the n-th most used app — its frontmost window, or launches it if it has none.
-    private func focusFrequent(_ n: Int) {
-        let apps = AppUsage.top(4)
-        guard apps.indices.contains(n) else { return }
-        let bundleID = apps[n]
-        if let g = state.groups.first(where: { $0.automation == nil && $0.windows.first?.bundleID == bundleID }) {
-            return focus(SwitchTarget(window: g.windows[0], tab: nil))
-        }
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
-        hide()
-        AppUsage.record(bundleID)
-        NSWorkspace.shared.openApplication(at: url, configuration: .init())
-    }
-
     private func focus(_ target: SwitchTarget) {
         hide()
         AppUsage.record(target.window.bundleID)
@@ -292,8 +278,8 @@ final class WindowsController {
             case 13: if let t = current { close(t) }                                   // ⌘W
             case 12: if let t = current { quit(t, force: mods.contains(.option)) }     // ⌘Q, ⌥⌘Q
             case 43: state.onOpenPreferences()                                         // ⌘,
-            case let code where (numberRowKeys[code] ?? 9) < 4:                         // ⌘1…⌘4: most used apps
-                focusFrequent(numberRowKeys[code]!)
+            case let code where (numberRowKeys[code] ?? 9) < state.frequent.count:      // ⌘1…⌘4: most used apps
+                if let t = state.target(forKey: numberRowKeys[code]!) { focus(t) }
             default: return false
             }
             return true
@@ -308,10 +294,8 @@ final class WindowsController {
         case 125: state.move(vertical: 1)                  // ↓
         case 36, 76:                                       // Return, Enter
             if let t = current { focus(t) }
-        case let code where numberRowKeys[code] != nil:    // 1…9, 0 → that window
-            let i = numberRowKeys[code]!
-            let all = state.flat
-            if all.indices.contains(i) { focus(all[i]) }
+        case let code where numberRowKeys[code] != nil:    // 1…9, 0 → most used apps, then windows
+            if let t = state.target(forKey: numberRowKeys[code]!) { focus(t) }
         default: return false
         }
         return true
@@ -327,8 +311,7 @@ final class WindowsController {
         guard mods.isDisjoint(with: [.control, .option]),
               let key = event.charactersIgnoringModifiers?.uppercased(), key.count == 1,
               let i = WindowsState.shortcutKeys.firstIndex(of: key), i >= 10 else { return nil }
-        let all = state.flat
-        if all.indices.contains(i) { focus(all[i]) }
+        if let t = state.target(forKey: i) { focus(t) }
         return true
     }
 }
