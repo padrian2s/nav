@@ -40,7 +40,16 @@ enum AppUsage {
         let top = running(2)
         guard let first = top.first else { return }
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let app = front == first.processIdentifier && top.count > 1 ? top[1] : first
+        activate(front == first.processIdentifier && top.count > 1 ? top[1] : first)
+    }
+
+    /// ⌥1…⌥4: the n-th most used app (0 = the first).
+    static func switchTo(_ n: Int) {
+        let top = running(n + 1)
+        if top.indices.contains(n) { activate(top[n]) }
+    }
+
+    private static func activate(_ app: NSRunningApplication) {
         app.unhide()
         // Launch Services brings the app's front window forward; with several instances
         // (your Chrome and a Playwright one) it can't tell them apart, so activate the process.

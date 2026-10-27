@@ -7,6 +7,9 @@ let windowsHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | shiftKey)
 let claudeHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | optionKey)
 // From any app: switches between your two most used apps (keys 1 and 2 in the windows view).
 let topTwoHotKey = (code: kVK_Tab, modifiers: optionKey)
+// From any app: ⌥1…⌥4 go to your most used apps (keys 1…4 in the windows view).
+let topAppKeys = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4]
+let topAppModifiers = optionKey
 // With `commandTab` on, these open the windows view and ⌘⇧E shows the macOS app switcher.
 let commandTabHotKey = (code: kVK_Tab, modifiers: cmdKey)
 let commandShiftTabHotKey = (code: kVK_Tab, modifiers: cmdKey | shiftKey)
@@ -56,7 +59,10 @@ let hotKeys = [
     HotKey(keyCode: windowsHotKey.code, modifiers: windowsHotKey.modifiers, action: windowsShortcut),
     HotKey(keyCode: claudeHotKey.code, modifiers: claudeHotKey.modifiers, action: toggleClaudeBoard),
     HotKey(keyCode: topTwoHotKey.code, modifiers: topTwoHotKey.modifiers, action: AppUsage.switchTopTwo),
-]
+] + topAppKeys.enumerated().map { i, code in
+    // While the windows view is open, ⌥1… keep opening Chrome profiles there.
+    HotKey(keyCode: code, modifiers: topAppModifiers) { windows.isVisible ? windows.openProfile(i) : AppUsage.switchTo(i) }
+}
 let tabHotKeys = [
     HotKey(keyCode: commandTabHotKey.code, modifiers: commandTabHotKey.modifiers) { commandTab(step: 1) },
     HotKey(keyCode: commandShiftTabHotKey.code, modifiers: commandShiftTabHotKey.modifiers) { commandTab(step: -1) },

@@ -44,6 +44,12 @@ final class WindowsController {
         isVisible ? hide() : show()
     }
 
+    /// ⌥1…⌥9 while the view is open: a new Chrome window with that closed profile.
+    func openProfile(_ i: Int) {
+        let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles ?? []
+        if profiles.indices.contains(i) { state.onOpenProfile(profiles[i]) }
+    }
+
     /// Next (1) / previous (-1) app, for ⌘Tab / ⌘⇧Tab pressed again while the view is open.
     func moveSelection(_ step: Int) {
         state.move(app: step)
@@ -305,8 +311,7 @@ final class WindowsController {
     /// Modern extras: ⌥1…9 opens a closed Chrome profile, A…Z switch like 1…0.
     private func handleModernKey(_ event: NSEvent, mods: NSEvent.ModifierFlags) -> Bool? {
         if mods == .option, let i = numberRowKeys[Int(event.keyCode)] {
-            let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles ?? []
-            if profiles.indices.contains(i) { state.onOpenProfile(profiles[i]) }
+            openProfile(i)
             return true
         }
         guard mods.isDisjoint(with: [.control, .option]),
