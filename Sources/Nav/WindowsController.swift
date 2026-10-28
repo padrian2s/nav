@@ -67,6 +67,7 @@ final class WindowsController {
         state.hoverPreview = config.hoverPreview
         state.commandTab = config.commandTab
         state.pinnedApps = Set(config.pinnedApps)
+        state.appKeys = config.appKeys
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil
@@ -273,6 +274,14 @@ final class WindowsController {
         return menu
     }
 
+    /// Key `i` (0 = "1"): its app or window; an app picked for it in Settings with no windows is opened.
+    private func focusKey(_ i: Int) {
+        if let t = state.target(forKey: i) { return focus(t) }
+        guard state.frequent.indices.contains(i), let id = state.pickedApp(forKey: i) else { return }
+        hide()
+        AppUsage.open(id, key: "\(i + 1)")
+    }
+
     private var current: SwitchTarget? {
         let id = state.selected ?? state.hovered
         return state.flat.first { $0.id == id }
@@ -286,7 +295,7 @@ final class WindowsController {
             case 12: if let t = current { quit(t, force: mods.contains(.option)) }     // ⌘Q, ⌥⌘Q
             case 43: state.onOpenPreferences()                                         // ⌘,
             case let code where (numberRowKeys[code] ?? 9) < state.frequent.count:      // ⌘1…⌘4: most used apps
-                if let t = state.target(forKey: numberRowKeys[code]!) { focus(t) }
+                focusKey(numberRowKeys[code]!)
             default: return false
             }
             return true
@@ -302,7 +311,7 @@ final class WindowsController {
         case 36, 76:                                       // Return, Enter
             if let t = current { focus(t) }
         case let code where numberRowKeys[code] != nil:    // 1…9, 0 → most used apps, then windows
-            if let t = state.target(forKey: numberRowKeys[code]!) { focus(t) }
+            focusKey(numberRowKeys[code]!)
         default: return false
         }
         return true
@@ -317,7 +326,7 @@ final class WindowsController {
         guard mods.isDisjoint(with: [.control, .option]),
               let key = event.charactersIgnoringModifiers?.uppercased(), key.count == 1,
               let i = WindowsState.shortcutKeys.firstIndex(of: key), i >= 10 else { return nil }
-        if let t = state.target(forKey: i) { focus(t) }
+        focusKey(i)
         return true
     }
 }

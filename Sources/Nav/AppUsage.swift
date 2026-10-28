@@ -21,33 +21,57 @@ enum AppUsage {
         scores = s
     }
 
-    /// The `n` most used apps that are running (your own instances, not automated ones).
-    static func running(_ n: Int) -> [NSRunningApplication] {
+    static let keyCount = 4
+
+    /// Which app each of ⌥1…⌥4 (and 1…4 in the windows view) goes to: the one picked in
+    /// Settings, or, for a key left on "Most used", the most used of `available` not on another key.
+    static func slots(available: [String], fixed: [String] = Config.current.appKeys) -> [String?] {
+        let fixed = Array((fixed + Array(repeating: "", count: keyCount)).prefix(keyCount))
         let scores = scores
-        var seen = Set<String>()
-        return NSWorkspace.shared.runningApplications
-            .filter { app in
-                guard app.activationPolicy == .regular, let id = app.bundleIdentifier, scores[id] != nil,
-                      AutomationKind.of(app.processIdentifier) == nil else { return false }
-                return seen.insert(id).inserted
-            }
-            .sorted { scores[$0.bundleIdentifier!]! > scores[$1.bundleIdentifier!]! }
-            .prefix(n).map { $0 }
+        var learned = Set(available).filter { scores[$0] != nil && !fixed.contains($0) }
+            .sorted { scores[$0]! > scores[$1]! }.makeIterator()
+        return fixed.map { $0.isEmpty ? learned.next() : $0 }
+    }
+
+    /// Your own running apps by bundle id (not automated ones, like a Playwright Chrome).
+    private static func runningApps() -> [String: NSRunningApplication] {
+        var apps: [String: NSRunningApplication] = [:]
+        for app in NSWorkspace.shared.runningApplications
+        where app.activationPolicy == .regular && AutomationKind.of(app.processIdentifier) == nil {
+            if let id = app.bundleIdentifier, apps[id] == nil { apps[id] = app }
+        }
+        return apps
+    }
+
+    /// What ⌥1…⌥4 go to right now.
+    static func currentSlots() -> [String?] { slots(available: Array(runningApps().keys)) }
+
+    static func name(of bundleID: String) -> String {
+        if let app = runningApps()[bundleID], let name = app.localizedName { return name }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID
     }
 
     /// ⌥Tab: from app 1 to app 2, from anywhere else to app 1.
     static func switchTopTwo() {
-        let top = running(2)
-        guard let first = top.first else { return }
-        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let second = front == first.processIdentifier && top.count > 1
-        activate(second ? top[1] : first, key: second ? "⌥2" : "⌥1")
+        let s = currentSlots()
+        guard let first = s[0] else { return }
+        let second = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == first && s[1] != nil
+        open(second ? s[1]! : first, key: second ? "⌥2" : "⌥1")
     }
 
-    /// ⌥1…⌥4: the n-th most used app (0 = the first).
+    /// ⌥1…⌥4: key `n` (0 = ⌥1).
     static func switchTo(_ n: Int) {
-        let top = running(n + 1)
-        if top.indices.contains(n) { activate(top[n], key: "⌥\(n + 1)") }
+        if let id = currentSlots()[n] { open(id, key: "⌥\(n + 1)") }
+    }
+
+    /// Brings the app forward, or launches it (an app picked in Settings that isn't running).
+    static func open(_ bundleID: String, key: String) {
+        if let app = runningApps()[bundleID] { return activate(app, key: key) }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, _ in
+            if let app { DispatchQueue.main.async { SwitchHUD.show(app, key: key) } }
+        }
     }
 
     private static func activate(_ app: NSRunningApplication, key: String) {

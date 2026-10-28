@@ -44,8 +44,11 @@ struct WindowsMetrics {
 
 final class WindowsState: ObservableObject {
     @Published var groups: [AppWindows] = [] { didSet { rankFrequent() } }
-    /// The most used apps here (see `AppUsage`), up to 4: keys 1…4 (and ⌘1…⌘4) switch to them.
-    private(set) var frequent: [pid_t] = []
+    /// The apps on keys 1…4 (and ⌘1…⌘4), as for ⌥1…⌥4 (see `AppUsage.slots`); nil for a
+    /// key whose app has no windows here.
+    private(set) var frequent: [pid_t?] = []
+    /// `Config.appKeys`, read on every show.
+    var appKeys: [String] = Config.current.appKeys
     @Published var needsPermission = false
     @Published var border = Config.BorderConfig()
     @Published var borderOpacity: Double = 0
@@ -119,15 +122,17 @@ final class WindowsState: ObservableObject {
     static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
 
     private func rankFrequent() {
-        let scores = AppUsage.scores
-        func score(_ g: AppWindows) -> Double { g.windows.first?.bundleID.flatMap { scores[$0] } ?? 0 }
-        var seen = Set<String>()
-        let ranked = groups.filter { g in
-            guard g.automation == nil, score(g) > 0, let id = g.windows.first?.bundleID else { return false }
-            return seen.insert(id).inserted
-        }
-        let pids = Array(ranked.sorted { score($0) > score($1) }.prefix(4).map(\.pid))
+        let own = groups.filter { $0.automation == nil }
+        let slots = AppUsage.slots(available: own.compactMap { $0.windows.first?.bundleID }, fixed: appKeys)
+        var pids = slots.map { id in own.first { $0.windows.first?.bundleID == id }?.pid }
+        // A key picked in Settings stays reserved even when its app has no windows (it gets opened).
+        while let last = pids.last, last == nil, pickedApp(forKey: pids.count - 1) == nil { pids.removeLast() }
         if pids != frequent { frequent = pids }
+    }
+
+    /// The app picked in Settings for key `i`, if any.
+    func pickedApp(forKey i: Int) -> String? {
+        appKeys.indices.contains(i) && !appKeys[i].isEmpty ? appKeys[i] : nil
     }
 
     func appShortcut(_ g: AppWindows) -> String? {

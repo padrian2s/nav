@@ -27,9 +27,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
                                 later(actions.windows)))
         menu.addItem(ActionItem("Dock", key: "e", modifiers: .command, later(actions.dock)))
         menu.addItem(ActionItem("Claude Sessions", key: "e", modifiers: [.command, .option], later(actions.claude)))
-        let top = AppUsage.running(2).compactMap(\.localizedName)
-        if top.count == 2 {
-            menu.addItem(ActionItem("Switch \(top[0]) ⇄ \(top[1])", key: "\t", modifiers: .option, AppUsage.switchTopTwo))
+        let top = AppUsage.currentSlots()
+        if let a = top[0], let b = top[1] {
+            menu.addItem(ActionItem("Switch \(AppUsage.name(of: a)) ⇄ \(AppUsage.name(of: b))", key: "\t", modifiers: .option,
+                                    AppUsage.switchTopTwo))
         }
         menu.addItem(.separator())
 

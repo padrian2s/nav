@@ -26,6 +26,40 @@ final class SettingsModel: ObservableObject {
         set { config.popupBorder.color = NSColor(newValue).hexString }
     }
 
+    /// Puts `bundleID` on ⌥(i+1) ("" = most used), taking it off any other key.
+    func setAppKey(_ i: Int, _ bundleID: String) {
+        var keys = (config.appKeys + Array(repeating: "", count: AppUsage.keyCount)).prefix(AppUsage.keyCount)
+            .map { $0 == bundleID ? "" : $0 }
+        keys[i] = bundleID
+        while keys.last == "" { keys.removeLast() }
+        config.appKeys = keys
+    }
+
+    /// Apps to offer for ⌥1…⌥4: the running ones and those already picked, by name.
+    var appChoices: [(id: String, name: String, icon: NSImage)] {
+        var ids = Set(config.appKeys.filter { !$0.isEmpty })
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            if let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier { ids.insert(id) }
+        }
+        return ids.compactMap { id in
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return nil }
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 16, height: 16)
+            return (id, AppUsage.name(of: id), icon)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// "Other…": pick any app from /Applications for ⌥(i+1).
+    func chooseApp(for i: Int) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Use for ⌥\(i + 1)"
+        guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
+        setAppKey(i, id)
+    }
+
     /// Replays fade in → hold → fade out, like when the popup opens.
     func play() {
         let b = config.popupBorder
@@ -122,6 +156,24 @@ struct SettingsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                Section("App shortcuts") {
+                    let choices = model.appChoices
+                    ForEach(0..<AppUsage.keyCount, id: \.self) { i in
+                        Picker("⌥\(i + 1)", selection: appKeyBinding(i)) {
+                            Text("Most used").tag("")
+                            Divider()
+                            ForEach(choices, id: \.id) { app in
+                                Label { Text(app.name) } icon: { Image(nsImage: app.icon) }.tag(app.id)
+                            }
+                            Divider()
+                            Text("Other…").tag(Self.otherTag)
+                        }
+                    }
+                    Text("⌥1…⌥4 work from any app (and 1…4 in the windows view); an app that isn't running is opened. \"Most used\" keys follow the apps you switch to most.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Preview") {
@@ -256,6 +308,19 @@ struct SettingsView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { model.config.popupBorder.palette = id }
+    }
+
+    private static let otherTag = "\u{0}other"
+
+    private func appKeyBinding(_ i: Int) -> Binding<String> {
+        Binding(get: { model.config.appKeys.indices.contains(i) ? model.config.appKeys[i] : "" },
+                set: { id in
+                    if id == Self.otherTag {
+                        DispatchQueue.main.async { model.chooseApp(for: i) }   // after the menu closes
+                    } else {
+                        model.setAppKey(i, id)
+                    }
+                })
     }
 
     private func slider(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>,
