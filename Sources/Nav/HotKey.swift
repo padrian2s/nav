@@ -47,6 +47,7 @@ final class HotKey {
 
     deinit {
         unregister()
+        HotKey.handlers[hotKeyID.id] = nil
     }
 
     private static func installHandler() {

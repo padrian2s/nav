@@ -17,9 +17,11 @@ struct Config: Codable {
     var chromeProfiles = "right"
     /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
     var commandTab = true
-    /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id; "" (or a
-    /// missing entry) leaves that key to the most used app.
+    /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id, or one of Nav's
+    /// features ("nav:claude", see `NavFeature`); "" (or a missing entry) leaves that key to the most used app.
     var appKeys: [String] = []
+    /// Remapped global shortcuts by `NavAction` ("dock": "ctrl+opt+d", "" = off); the rest keep their default.
+    var shortcuts: [String: String] = [:]
     /// Text editors: their windows get R, F, V (then T, G, B) in the windows view.
     var editorApps = ["dev.zed.Zed", "dev.zed.Zed-Preview", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
                       "com.exafunction.windsurf", "com.sublimetext.4", "com.panic.Nova", "com.jetbrains.intellij",
@@ -123,6 +125,7 @@ struct Config: Codable {
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
         appKeys = try c.decodeIfPresent([String].self, forKey: .appKeys) ?? []
+        shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? [:]
         editorApps = try c.decodeIfPresent([String].self, forKey: .editorApps) ?? Config().editorApps
         pinnedApps = try c.decodeIfPresent([String].self, forKey: .pinnedApps) ?? Config().pinnedApps
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true

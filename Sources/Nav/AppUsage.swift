@@ -47,6 +47,7 @@ enum AppUsage {
     static func currentSlots() -> [String?] { slots(available: Array(runningApps().keys)) }
 
     static func name(of bundleID: String) -> String {
+        if let feature = NavFeature(id: bundleID) { return feature.title }
         if let app = runningApps()[bundleID], let name = app.localizedName { return name }
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
             .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID
@@ -57,16 +58,23 @@ enum AppUsage {
         let s = currentSlots()
         guard let first = s[0] else { return }
         let second = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == first && s[1] != nil
-        open(second ? s[1]! : first, key: second ? "⌥2" : "⌥1")
+        open(second ? s[1]! : first, key: keyLabel(second ? 1 : 0))
     }
 
     /// ⌥1…⌥4: key `n` (0 = ⌥1).
     static func switchTo(_ n: Int) {
-        if let id = currentSlots()[n] { open(id, key: "⌥\(n + 1)") }
+        if let id = currentSlots()[n] { open(id, key: keyLabel(n)) }
     }
 
-    /// Brings the app forward, or launches it (an app picked in Settings that isn't running).
+    /// "⌥1": app key `n`'s shortcut as shown.
+    static func keyLabel(_ n: Int) -> String {
+        Config.current.shortcut(NavAction.appKeys[n])?.label ?? "\(n + 1)"
+    }
+
+    /// Brings the app forward, or launches it (an app picked in Settings that isn't running);
+    /// a Nav feature ("nav:claude") opens that feature.
     static func open(_ bundleID: String, key: String) {
+        if let feature = NavFeature(id: bundleID) { return NavFeature.run(feature) }
         if let app = runningApps()[bundleID] { return activate(app, key: key) }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, _ in

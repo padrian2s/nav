@@ -1,15 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-// Change the global shortcuts here.
-let dockHotKey = (code: kVK_ANSI_E, modifiers: cmdKey)
-let windowsHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | shiftKey)
-let claudeHotKey = (code: kVK_ANSI_E, modifiers: cmdKey | optionKey)
-// From any app: switches between your two most used apps (keys 1 and 2 in the windows view).
-let topTwoHotKey = (code: kVK_Tab, modifiers: optionKey)
-// From any app: ⌥1…⌥4 go to your most used apps (keys 1…4 in the windows view).
-let topAppKeys = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4]
-let topAppModifiers = optionKey
+// The other global shortcuts are `NavAction`s, remappable in Settings.
 // With `commandTab` on, these open the windows view and ⌘⇧E shows the macOS app switcher.
 let commandTabHotKey = (code: kVK_Tab, modifiers: cmdKey)
 let commandShiftTabHotKey = (code: kVK_Tab, modifiers: cmdKey | shiftKey)
@@ -54,15 +46,46 @@ func windowsShortcut() {
     }, takeBack: updateHotKeysForFrontmostApp)
 }
 
-let hotKeys = [
-    HotKey(keyCode: dockHotKey.code, modifiers: dockHotKey.modifiers, action: toggleDock),
-    HotKey(keyCode: windowsHotKey.code, modifiers: windowsHotKey.modifiers, action: windowsShortcut),
-    HotKey(keyCode: claudeHotKey.code, modifiers: claudeHotKey.modifiers, action: toggleClaudeBoard),
-    HotKey(keyCode: topTwoHotKey.code, modifiers: topTwoHotKey.modifiers, action: AppUsage.switchTopTwo),
-] + topAppKeys.enumerated().map { i, code in
-    // While the windows view is open, ⌥1… keep opening Chrome profiles there.
-    HotKey(keyCode: code, modifiers: topAppModifiers) { windows.isVisible ? windows.openProfile(i) : AppUsage.switchTo(i) }
+NavFeature.run = { feature in
+    switch feature {
+    case .windows: toggleWindows()
+    case .dock: toggleDock()
+    case .claude: toggleClaudeBoard()
+    case .settings: SettingsWindowController.shared.show()
+    }
 }
+
+func run(_ action: NavAction) {
+    switch action {
+    case .dock: toggleDock()
+    case .windows: windowsShortcut()
+    case .claude: toggleClaudeBoard()
+    case .switchTopTwo: AppUsage.switchTopTwo()
+    case .key1, .key2, .key3, .key4:
+        // While the windows view is open, ⌥1… keep opening Chrome profiles there.
+        if windows.isVisible, let s = Config.current.shortcut(action), s.modifiers == .option,
+           let i = numberRowKeys[s.keyCode] {
+            windows.openProfile(i)
+        } else {
+            AppUsage.switchTo(action.appIndex!)
+        }
+    }
+}
+
+/// The global shortcuts from the config; rebuilt when Settings change them.
+var hotKeys: [HotKey] = []
+/// True while Settings records a shortcut, so pressing one that's taken doesn't run it.
+var hotKeysSuspended = false
+
+func registerHotKeys() {
+    hotKeys = []   // unregisters the old ones first
+    let config = Config.current
+    hotKeys = NavAction.allCases.compactMap { action in
+        config.shortcut(action).map { s in HotKey(keyCode: s.keyCode, modifiers: s.carbonModifiers) { run(action) } }
+    }
+    updateHotKeysForFrontmostApp()
+}
+
 let tabHotKeys = [
     HotKey(keyCode: commandTabHotKey.code, modifiers: commandTabHotKey.modifiers) { commandTab(step: 1) },
     HotKey(keyCode: commandShiftTabHotKey.code, modifiers: commandShiftTabHotKey.modifiers) { commandTab(step: -1) },
@@ -74,7 +97,7 @@ func updateHotKeysForFrontmostApp() {
     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     let pass = config.passShortcutsToRemoteApps && config.isRemoteApp(front)
     if pass { dock.hide(); windows.hide(); claudeBoard.hide() }
-    hotKeys.forEach { $0.isEnabled = !pass }
+    hotKeys.forEach { $0.isEnabled = !pass && !hotKeysSuspended }
     // Remote app in front: the system ⌘Tab comes back, so you can still switch away from it.
     let takeTab = config.commandTab && !pass
     guard !CommandTab.isShowingNative else { return }
@@ -83,7 +106,7 @@ func updateHotKeysForFrontmostApp() {
 }
 NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
                                                   object: nil, queue: .main) { _ in updateHotKeysForFrontmostApp() }
-updateHotKeysForFrontmostApp()
+registerHotKeys()
 
 // `kill -USR1 / -USR2 / -INFO <pid>` toggle the dock / windows view / Claude board — handy for scripting/testing.
 var signalSources: [DispatchSourceSignal] = []

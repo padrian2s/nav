@@ -23,14 +23,19 @@ final class MenuBar: NSObject, NSMenuDelegate {
         // Run after the menu closes, so the popup gets the keyboard.
         func later(_ action: @escaping () -> Void) -> () -> Void { { DispatchQueue.main.async(execute: action) } }
 
-        menu.addItem(ActionItem("Windows", key: commandTab ? "\t" : "e", modifiers: commandTab ? .command : [.command, .shift],
-                                later(actions.windows)))
-        menu.addItem(ActionItem("Dock", key: "e", modifiers: .command, later(actions.dock)))
-        menu.addItem(ActionItem("Claude Sessions", key: "e", modifiers: [.command, .option], later(actions.claude)))
+        let config = Config.current
+        func item(_ title: String, _ shortcut: Shortcut?, _ action: @escaping () -> Void) -> NSMenuItem {
+            ActionItem(title, key: shortcut?.menuKey ?? "", modifiers: shortcut?.modifiers ?? [], action)
+        }
+
+        let windowsKey = commandTab ? Shortcut(keyCode: 48, modifiers: .command) : config.shortcut(.windows)
+        menu.addItem(item("Windows", windowsKey, later(actions.windows)))
+        menu.addItem(item("Dock", config.shortcut(.dock), later(actions.dock)))
+        menu.addItem(item("Claude Sessions", config.shortcut(.claude), later(actions.claude)))
         let top = AppUsage.currentSlots()
         if let a = top[0], let b = top[1] {
-            menu.addItem(ActionItem("Switch \(AppUsage.name(of: a)) ⇄ \(AppUsage.name(of: b))", key: "\t", modifiers: .option,
-                                    AppUsage.switchTopTwo))
+            menu.addItem(item("Switch \(AppUsage.name(of: a)) ⇄ \(AppUsage.name(of: b))", config.shortcut(.switchTopTwo),
+                              later(AppUsage.switchTopTwo)))
         }
         menu.addItem(.separator())
 

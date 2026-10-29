@@ -10,6 +10,7 @@ final class SettingsModel: ObservableObject {
             if config.launchAtLogin != oldValue.launchAtLogin { LoginItem.sync(config.launchAtLogin) }
             if config.hideDock != oldValue.hideDock, config.hideDock != MacDock.isHidden { MacDock.setHidden(config.hideDock) }
             if config.commandTab != oldValue.commandTab { updateHotKeysForFrontmostApp() }
+            if config.shortcuts != oldValue.shortcuts { registerHotKeys() }
         }
     }
     /// Border opacity in the preview, so the fade can be replayed.
@@ -24,6 +25,57 @@ final class SettingsModel: ObservableObject {
     var color: Color {
         get { Color(nsColor: config.popupBorder.nsColor) }
         set { config.popupBorder.color = NSColor(newValue).hexString }
+    }
+
+    /// The shortcut being recorded in Settings, if any.
+    @Published private(set) var recording: NavAction?
+    private var recordMonitor: Any?
+
+    /// Records the next key press as `action`'s shortcut. Nav's shortcuts are paused meanwhile,
+    /// so pressing one that's taken records it instead of running it.
+    func record(_ action: NavAction) {
+        stopRecording()
+        recording = action
+        hotKeysSuspended = true
+        updateHotKeysForFrontmostApp()
+        recordMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let plain = event.modifierFlags.isDisjoint(with: [.control, .option, .shift, .command])
+            if plain && event.keyCode == 53 {                     // Esc
+                self.stopRecording()
+            } else if plain && event.keyCode == 51 {              // ⌫
+                self.setShortcut(action, nil)
+                self.stopRecording()
+            } else if let shortcut = Shortcut(event: event) {
+                self.setShortcut(action, shortcut)
+                self.stopRecording()
+            } else {
+                NSSound.beep()                                    // needs a modifier
+            }
+            return nil
+        }
+    }
+
+    func stopRecording() {
+        if let recordMonitor { NSEvent.removeMonitor(recordMonitor) }
+        recordMonitor = nil
+        guard recording != nil else { return }
+        recording = nil
+        hotKeysSuspended = false
+        updateHotKeysForFrontmostApp()
+    }
+
+    /// Gives `action` the shortcut, taking it off any other action; the default is stored as no override.
+    func setShortcut(_ action: NavAction, _ shortcut: Shortcut?) {
+        var shortcuts = config.shortcuts
+        if let shortcut {
+            for other in NavAction.allCases where other != action && config.shortcut(other) == shortcut {
+                shortcuts[other.rawValue] = ""
+            }
+        }
+        let value = shortcut?.string ?? ""
+        shortcuts[action.rawValue] = value == Shortcut(action.defaultShortcut)?.string ? nil : value
+        config.shortcuts = shortcuts
     }
 
     /// Puts `bundleID` on ⌥(i+1) ("" = most used), taking it off any other key.
@@ -94,6 +146,10 @@ final class SettingsWindowController {
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView(model: model))
             w.center()
+            // Closing mid-recording would leave Nav's shortcuts paused.
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) {
+                [model] _ in model.stopRecording()
+            }
             window = w
         }
         // Nav is a background app; plain activate() is refused when another app is frontmost.
@@ -161,17 +217,38 @@ struct SettingsView: View {
                 Section("App shortcuts") {
                     let choices = model.appChoices
                     ForEach(0..<AppUsage.keyCount, id: \.self) { i in
-                        Picker("⌥\(i + 1)", selection: appKeyBinding(i)) {
-                            Text("Most used").tag("")
-                            Divider()
-                            ForEach(choices, id: \.id) { app in
-                                Label { Text(app.name) } icon: { Image(nsImage: app.icon) }.tag(app.id)
+                        HStack {
+                            ShortcutRecorder(model: model, action: NavAction.appKeys[i])
+                            Picker("", selection: appKeyBinding(i)) {
+                                Text("Most used").tag("")
+                                Divider()
+                                ForEach(choices, id: \.id) { app in
+                                    Label { Text(app.name) } icon: { Image(nsImage: app.icon) }.tag(app.id)
+                                }
+                                Divider()
+                                ForEach(NavFeature.allCases, id: \.self) { feature in
+                                    Label("Nav: \(feature.title)", systemImage: feature.symbol).tag(feature.id)
+                                }
+                                Divider()
+                                Text("Other…").tag(Self.otherTag)
                             }
-                            Divider()
-                            Text("Other…").tag(Self.otherTag)
+                            .labelsHidden()
                         }
                     }
-                    Text("⌥1…⌥4 work from any app (and 1…4 in the windows view); an app that isn't running is opened. \"Most used\" keys follow the apps you switch to most.")
+                    Text("Work from any app (and 1…4 in the windows view); an app that isn't running is opened. \"Most used\" keys follow the apps you switch to most.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Shortcuts") {
+                    ForEach([NavAction.windows, .dock, .claude, .switchTopTwo], id: \.self) { action in
+                        HStack {
+                            Text(action.title)
+                            Spacer()
+                            ShortcutRecorder(model: model, action: action)
+                        }
+                    }
+                    Text("Click a shortcut, then press the new keys. Esc cancels, ⌫ turns it off, ↺ puts back the default.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -355,5 +432,30 @@ extension NSColor {
         let r = Int(round(c.redComponent * 255)), g = Int(round(c.greenComponent * 255))
         let b = Int(round(c.blueComponent * 255)), a = Int(round(c.alphaComponent * 255))
         return a == 255 ? String(format: "#%02X%02X%02X", r, g, b) : String(format: "#%02X%02X%02X%02X", r, g, b, a)
+    }
+}
+
+/// A global shortcut in Settings: click it, then press the new keys (Esc cancels, ⌫ turns
+/// it off); ↺ puts back the default.
+struct ShortcutRecorder: View {
+    @ObservedObject var model: SettingsModel
+    let action: NavAction
+
+    var body: some View {
+        let recording = model.recording == action
+        HStack(spacing: 4) {
+            Button { recording ? model.stopRecording() : model.record(action) } label: {
+                Text(recording ? "Press keys…" : (model.config.shortcut(action)?.label ?? "Off"))
+                    .monospacedDigit()
+                    .frame(minWidth: 84)
+            }
+            Button { model.setShortcut(action, Shortcut(action.defaultShortcut)) } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(.borderless)
+            .help("Back to \(Shortcut(action.defaultShortcut)?.label ?? "")")
+            .opacity(model.config.shortcuts[action.rawValue] == nil ? 0 : 1)
+            .disabled(model.config.shortcuts[action.rawValue] == nil)
+        }
     }
 }
