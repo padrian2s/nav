@@ -68,6 +68,7 @@ final class WindowsController {
         state.commandTab = config.commandTab
         state.pinnedApps = Set(config.pinnedApps)
         state.appKeys = config.appKeys
+        state.editorApps = Set(config.editorApps)
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil
@@ -300,6 +301,11 @@ final class WindowsController {
             }
             return true
         }
+        if mods.isDisjoint(with: [.control, .option]), let e = editorKeyCodes[Int(event.keyCode)] {   // R F V T G B
+            let editors = state.editorTargets
+            if editors.indices.contains(e) { focus(editors[e]) }
+            return true
+        }
         if state.modern, let handled = handleModernKey(event, mods: mods) { return handled }
         switch Int(event.keyCode) {
         case 53: hide()                                    // Esc
@@ -330,6 +336,9 @@ final class WindowsController {
         return true
     }
 }
+
+/// Physical R F V T G B keys (layout independent) → editor index, as in `WindowsState.editorKeys`.
+let editorKeyCodes: [Int: Int] = [15: 0, 3: 1, 9: 2, 17: 3, 5: 4, 11: 5]
 
 /// Physical number-row keys 1…9, 0 (layout independent) → item index.
 let numberRowKeys: [Int: Int] = [18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8, 29: 9]

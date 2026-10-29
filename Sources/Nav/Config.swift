@@ -20,6 +20,11 @@ struct Config: Codable {
     /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id; "" (or a
     /// missing entry) leaves that key to the most used app.
     var appKeys: [String] = []
+    /// Text editors: their windows get R, F, V (then T, G, B) in the windows view.
+    var editorApps = ["dev.zed.Zed", "dev.zed.Zed-Preview", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
+                      "com.exafunction.windsurf", "com.sublimetext.4", "com.panic.Nova", "com.jetbrains.intellij",
+                      "com.jetbrains.WebStorm", "com.jetbrains.pycharm", "com.apple.dt.Xcode", "com.apple.TextEdit",
+                      "com.barebones.bbedit"]
     /// Bundle ids always at the top of the windows view (the most used of them first).
     var pinnedApps = ["com.googlecode.iterm2", "com.google.Chrome"]
     /// While a remote desktop / VM app is frontmost, release ⌘E / ⌘⇧E so they reach
@@ -118,6 +123,7 @@ struct Config: Codable {
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
         appKeys = try c.decodeIfPresent([String].self, forKey: .appKeys) ?? []
+        editorApps = try c.decodeIfPresent([String].self, forKey: .editorApps) ?? Config().editorApps
         pinnedApps = try c.decodeIfPresent([String].self, forKey: .pinnedApps) ?? Config().pinnedApps
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
         remoteApps = try c.decodeIfPresent([String].self, forKey: .remoteApps) ?? []

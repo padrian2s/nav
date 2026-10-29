@@ -118,8 +118,18 @@ final class WindowsState: ObservableObject {
         hovered = nil
     }
 
-    /// Shortcut keys: 1…9, 0, then (Modern) A…Z.
-    static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
+    /// Shortcut keys: 1…9, 0, then (Modern) the letters not kept for editors.
+    static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init).filter { !editorKeys.contains($0) }
+    /// Editor windows (see `Config.editorApps`): the R F V column under the left hand, then T G B.
+    static let editorKeys = ["R", "F", "V", "T", "G", "B"]
+    /// `Config.editorApps`, read on every show.
+    var editorApps = Set(Config.current.editorApps)
+
+    /// Editor windows in display order, one per editor key.
+    var editorTargets: [SwitchTarget] {
+        Array(flat.filter { !isAppCard($0) && $0.window.bundleID.map(editorApps.contains) == true }
+            .prefix(Self.editorKeys.count))
+    }
 
     private func rankFrequent() {
         let own = groups.filter { $0.automation == nil }
@@ -144,14 +154,18 @@ final class WindowsState: ObservableObject {
         modern && frequent.contains(t.window.pid) && groups.contains { $0.pid == t.window.pid && isSingle($0) }
     }
 
-    /// Windows/tabs with a key of their own, numbered after the frequent apps.
-    var keyed: [SwitchTarget] { flat.filter { !isAppCard($0) } }
+    /// Windows/tabs numbered after the frequent apps (editor windows have their letters).
+    var keyed: [SwitchTarget] {
+        let editors = Set(editorTargets.map(\.id))
+        return flat.filter { !isAppCard($0) && !editors.contains($0.id) }
+    }
 
     /// Shortcut label: the frequent apps take "1"…"4", then windows get the next keys up to "0",
     /// then letters in Modern.
     func shortcut(for id: String) -> String? {
         guard let t = flat.first(where: { $0.id == id }) else { return nil }
         if isAppCard(t) { return frequent.firstIndex(of: t.window.pid).map { Self.shortcutKeys[$0] } }
+        if let e = editorTargets.firstIndex(where: { $0.id == id }) { return Self.editorKeys[e] }
         guard let i = keyed.firstIndex(where: { $0.id == id }) else { return nil }
         let k = frequent.count + i
         return k < (modern ? Self.shortcutKeys.count : 10) ? Self.shortcutKeys[k] : nil
