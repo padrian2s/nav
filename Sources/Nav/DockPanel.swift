@@ -124,6 +124,16 @@ final class ActionItem: NSMenuItem {
 }
 
 final class DockController {
+    /// Quits the app. Browsers driven by Playwright / Puppeteer ignore the quit request,
+    /// so those are force-quit when they're still running a moment later.
+    static func quit(_ app: NSRunningApplication) {
+        app.terminate()
+        guard AutomationKind.of(app.processIdentifier) != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if !app.isTerminated { app.forceTerminate() }
+        }
+    }
+
     private let panel = DockPanel()
     private let state = DockState()
 
@@ -304,7 +314,8 @@ final class DockController {
             menu.addItem(optionsItem)
             menu.addItem(.separator())
 
-            let running = item.bundleID.flatMap {
+            // The tile's own instance: several can share a bundle id (Playwright Chromes).
+            let running = item.pid.flatMap { NSRunningApplication(processIdentifier: $0) } ?? item.bundleID.flatMap {
                 NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
             }
             if let app = running {
@@ -314,7 +325,7 @@ final class DockController {
                     if app.isHidden { app.unhide() } else { app.hide() }
                 })
                 if item.bundleID != "com.apple.finder" {
-                    menu.addItem(ActionItem("Quit") { app.terminate() })
+                    menu.addItem(ActionItem("Quit") { DockController.quit(app) })
                     // Hold ⌥ to swap Quit for Force Quit, like the Dock.
                     let force = ActionItem("Force Quit", modifiers: .option) { app.forceTerminate() }
                     force.isAlternate = true

@@ -237,7 +237,7 @@ final class WindowsController {
 
     private func quit(_ target: SwitchTarget, force: Bool) {
         guard let app = NSRunningApplication(processIdentifier: target.window.pid) else { return }
-        _ = force ? app.forceTerminate() : app.terminate()
+        if force { app.forceTerminate() } else { DockController.quit(app) }
         state.remove(pid: target.window.pid)
         reload(after: 1.0, pending: target, wholeApp: true)
     }
