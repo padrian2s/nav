@@ -74,6 +74,8 @@ struct Shortcut: Equatable {
     var string: String { (names.map(\.name) + [Self.keys[keyCode]?.name ?? "?"]).joined(separator: "+") }
     /// As shown: "⇧⌘E".
     var label: String { names.map(\.label).joined() + (Self.keys[keyCode]?.label ?? "?") }
+    /// One keycap per modifier, then the key: ["⇧", "⌘", "E"].
+    var caps: [String] { names.map(\.label) + [Self.keys[keyCode]?.label ?? "?"] }
     var carbonModifiers: Int { names.reduce(0) { $0 | $1.carbon } }
     var menuKey: String { Self.keys[keyCode]?.menu ?? "" }
 }

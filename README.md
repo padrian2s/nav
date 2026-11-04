@@ -38,6 +38,8 @@ Permissions (only the first time):
 
 ## Customize
 
+Settings has a sidebar with five panes (General, Windows view, Dock, Shortcuts, Popup border), follows the system Light / Dark look, and opens on the pane you used last.
+
 **General** (in ⚙︎ Settings):
 - **Open Nav at login**: on by default. Nav registers itself as a macOS Login Item.
 - **Hide the macOS Dock**: while Nav runs, the real Dock stays out of sight (it never slides in), so ⌘E takes its place. Quitting Nav brings it back: use the ⏻ at the bottom of ⌘⇧E or **Quit Nav** in Settings.
