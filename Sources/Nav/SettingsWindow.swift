@@ -212,6 +212,17 @@ struct SettingsView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Picker("Dock (⌘E)", selection: $model.config.dockPosition) {
+                            ForEach(DockPlacement.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                        Text(model.config.dockPlacement == .free
+                             ? "Opens where the mouse is."
+                             : "Stuck to the \(model.config.dockPosition) edge of the screen the mouse is on.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("App shortcuts") {

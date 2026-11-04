@@ -32,13 +32,24 @@ final class DockPanel: NSPanel {
 
     private var mouseMonitor: Any?
 
-    /// Shows the panel centered horizontally on the cursor, with the cursor
-    /// `anchorY` points above the panel's bottom edge, clamped to the screen.
-    func present(size: NSSize, anchorY: CGFloat) {
+    /// Gap between a dock stuck to an edge and the screen's edge.
+    static let edgeGap: CGFloat = 6
+
+    /// Free: centered horizontally on the cursor, with the cursor `anchorY` points above the
+    /// panel's bottom edge. Otherwise against that edge of the cursor's screen, centered along it.
+    func present(size: NSSize, placement: DockPlacement = .free, anchorY: CGFloat) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main!
-        var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - anchorY)
         let vf = screen.visibleFrame
+        let size = NSSize(width: min(size.width, vf.width), height: min(size.height, vf.height))
+        let gap = Self.edgeGap
+        var origin: NSPoint
+        switch placement {
+        case .free: origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - anchorY)
+        case .bottom: origin = NSPoint(x: vf.midX - size.width / 2, y: vf.minY + gap)
+        case .left: origin = NSPoint(x: vf.minX + gap, y: vf.midY - size.height / 2)
+        case .right: origin = NSPoint(x: vf.maxX - size.width - gap, y: vf.midY - size.height / 2)
+        }
         origin.x = min(max(origin.x, vf.minX), vf.maxX - size.width)
         origin.y = min(max(origin.y, vf.minY), vf.maxY - size.height)
 
@@ -57,11 +68,20 @@ final class DockPanel: NSPanel {
         }
     }
 
-    /// Changes height keeping the bottom edge (the dock row) in place.
-    func setHeight(_ height: CGFloat) {
+    /// Resizes keeping the dock row in place: a bottom row keeps the bottom edge (only the height
+    /// changes), a left / right column keeps its screen edge and vertical center.
+    func fit(_ size: NSSize, placement: DockPlacement) {
         guard isVisible, let vf = screen?.visibleFrame else { return }
         var f = frame
-        f.size.height = min(height, vf.maxY - f.minY)
+        if placement.isVertical {
+            let height = min(size.height, vf.height)
+            if placement == .right { f.origin.x = f.maxX - size.width }
+            f.size.width = size.width
+            f.origin.y = min(max(f.midY - height / 2, vf.minY), vf.maxY - height)
+            f.size.height = height
+        } else {
+            f.size.height = min(size.height, vf.maxY - f.minY)
+        }
         setFrame(f, display: true)
     }
 
@@ -173,26 +193,43 @@ final class DockController {
         isVisible ? hide() : show()
     }
 
-    private var baseHeight: CGFloat = 0
+    private var baseSize = NSSize.zero
 
     func show() {
         state.stack = nil
         state.metrics = DockMetrics.current()
+        state.placement = Config.current.dockPlacement
         state.sections = DockModel.load()
         state.hoverX = nil
         state.selected = nil
 
+        fitTiles()
         let m = state.metrics
         let extra = m.magnify ? m.tileSize * (m.maxScale - 1) * 2.2 : 0
-        let size = NSSize(width: state.baseRowWidth + m.padding * 2 + extra + 120,
-                          height: m.tileSize * m.maxScale + m.padding * 2 + 6 + m.labelHeight)
-        baseHeight = size.height
-        // Cursor sits on the middle of the dock row.
-        panel.present(size: size, anchorY: (m.tileSize + m.padding * 2 + 6) / 2)
+        let length = state.baseRowWidth + m.padding * 2 + extra + 120
+        let thickness = m.tileSize * m.maxScale + m.padding * 2 + 6
+        let size = state.placement.isVertical
+            ? NSSize(width: thickness + m.labelWidth, height: length)
+            : NSSize(width: length, height: thickness + m.labelHeight)
+        baseSize = size
+        // Free: the cursor sits on the middle of the dock row.
+        panel.present(size: size, placement: state.placement, anchorY: m.rowHeight / 2)
     }
 
     func hide() {
         panel.dismiss()
+    }
+
+    /// Shrinks the icons when the row is longer than the screen edge it sits on, like the real Dock.
+    private func fitTiles() {
+        let mouse = NSEvent.mouseLocation
+        guard let vf = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
+        else { return }
+        let room = (state.placement.isVertical ? vf.height : vf.width) - DockPanel.edgeGap * 2
+        let length = state.baseRowWidth
+        guard length > room, !state.items.isEmpty else { return }
+        let tiles = CGFloat(state.items.count) * state.metrics.tileSize
+        state.metrics.tileSize = max(16, ((room - (length - tiles)) / CGFloat(state.items.count)).rounded(.down))
     }
 
     // MARK: Tab stacks (Chrome, iTerm2)
@@ -239,11 +276,15 @@ final class DockController {
     private func setStack(_ stack: DockStack?) {
         let m = state.metrics
         if let stack {
-            let needed = m.rowHeight + m.stackGap + m.stackHeight(stack) + 8
-            panel.setHeight(max(baseHeight, needed))
+            // Room for the tab list above the row, or beside the column.
+            let size = state.placement.isVertical
+                ? NSSize(width: max(baseSize.width, m.rowHeight + m.stackGap + m.stackWidth(stack) + 8),
+                         height: max(baseSize.height, m.stackHeight(stack) + 16))
+                : NSSize(width: baseSize.width, height: max(baseSize.height, m.rowHeight + m.stackGap + m.stackHeight(stack) + 8))
+            panel.fit(size, placement: state.placement)
         }
         withAnimation(.easeOut(duration: 0.15)) { state.stack = stack }
-        if stack == nil { panel.setHeight(baseHeight) }
+        if stack == nil { panel.fit(baseSize, placement: state.placement) }
     }
 
     private func closeTab(_ tab: TabInfo) {
@@ -286,8 +327,8 @@ final class DockController {
         if let stack = state.stack { return handleStackKey(event, stack) }
         switch Int(event.keyCode) {
         case 53: hide()                                    // Esc
-        case 123: state.move(-1)                           // ←
-        case 124, 48: state.move(1)                        // →, Tab
+        case 123, 126: state.move(-1)                      // ←, ↑ (left / right docks)
+        case 124, 125, 48: state.move(1)                   // →, ↓, Tab
         case 36, 76:                                       // Return, Enter
             if let i = state.selected, state.items.indices.contains(i) { open(state.items[i]) }
         default: return false

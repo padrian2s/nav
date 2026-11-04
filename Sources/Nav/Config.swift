@@ -13,6 +13,8 @@ struct Config: Codable {
     var launchAtLogin = true
     /// Keep the macOS Dock hidden while Nav runs; it comes back when Nav quits.
     var hideDock = false
+    /// Where ⌘E opens the dock: "free" (at the mouse) or stuck to the screen's "left", "bottom" or "right" edge.
+    var dockPosition = "free"
     /// Where closed Chrome profiles are shown next to Chrome's tabs: "left", "right" or "off".
     var chromeProfiles = "right"
     /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
@@ -50,6 +52,7 @@ struct Config: Codable {
         "com.utmapp.UTM",                           // UTM
     ]
 
+    var dockPlacement: DockPlacement { DockPlacement(rawValue: dockPosition) ?? .free }
     var isModern: Bool { theme != "classic" }
     var profilesOnLeft: Bool { chromeProfiles == "left" }
     var showsChromeProfiles: Bool { chromeProfiles != "off" }
@@ -122,6 +125,7 @@ struct Config: Codable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? true
         // Older configs: adopt whatever the Dock is set to now.
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
+        dockPosition = try c.decodeIfPresent(String.self, forKey: .dockPosition) ?? "free"
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
         appKeys = try c.decodeIfPresent([String].self, forKey: .appKeys) ?? []

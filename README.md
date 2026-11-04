@@ -41,6 +41,7 @@ Permissions (only the first time):
 **General** (in ⚙︎ Settings):
 - **Open Nav at login**: on by default. Nav registers itself as a macOS Login Item.
 - **Hide the macOS Dock**: while Nav runs, the real Dock stays out of sight (it never slides in), so ⌘E takes its place. Quitting Nav brings it back: use the ⏻ at the bottom of ⌘⇧E or **Quit Nav** in Settings.
+- **Dock (⌘E)**: Free / Left / Bottom / Right. Free opens it at the mouse. Left, Bottom or Right stick it to that edge of the screen the mouse is on; on the left / right edges the icons go top to bottom (↑ ↓ move too) and the tab lists open beside them. When the icons don't fit along the edge they shrink, like the real Dock. In `config.json` it's `"dockPosition"`.
 - **Automated browsers** (Playwright, Puppeteer, …): Chrome instances started by testing tools show up separately with a 🎭 / ⚙︎ badge, in ⌘E and ⌘⇧E. Tab lists and profiles always come from your own Chrome.
 - **Chrome profiles**: Left / Right / Off. Chrome profiles with no open window appear as avatars next to Chrome's tabs, in ⌘E and in ⌘⇧E. Click one to open a window with that profile.
 - **⌘Tab switcher**: Nav (the default) or macOS. With Nav, ⌘Tab / ⌘⇧Tab open the windows view and ⌘⇧E shows the macOS app switcher; with macOS it's the other way round. The **⌘⇥ Nav / macOS** pill in the windows view's footer switches it too.

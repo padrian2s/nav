@@ -9,6 +9,8 @@ struct DockMetrics {
     let padding: CGFloat = 8
     let separatorWidth: CGFloat = 17
     let labelHeight: CGFloat = 44
+    /// Room for the name next to the icons when the dock is on the left / right edge.
+    let labelWidth: CGFloat = 220
     let stackWidth: CGFloat = 400
     let stackRowHeight: CGFloat = 24
     let stackHeaderHeight: CGFloat = 32
@@ -42,6 +44,23 @@ struct DockMetrics {
     }
 
     var maxScale: CGFloat { magnify ? largeSize / tileSize : 1 }
+}
+
+/// Where ⌘E opens the dock (`dockPosition` in config.json).
+enum DockPlacement: String, CaseIterable {
+    case free, left, bottom, right
+
+    var title: String {
+        switch self {
+        case .free: "Free"
+        case .left: "Left"
+        case .bottom: "Bottom"
+        case .right: "Right"
+        }
+    }
+
+    /// Left / right: the icons go top to bottom.
+    var isVertical: Bool { self == .left || self == .right }
 }
 
 /// The real Dock uses the see-through "clear" glass, not the frosted "regular" one.
@@ -81,7 +100,8 @@ final class DockState: ObservableObject {
 
     @Published var sections: [[DockItem]] = [] { didSet { rebuild() } }
     @Published var metrics = DockMetrics.current()
-    @Published var hoverX: CGFloat?          // in "base" (unmagnified) row coordinates
+    @Published var placement = DockPlacement.free
+    @Published var hoverX: CGFloat?          // along the row (down it when vertical), in "base" (unmagnified) coordinates
     @Published var selected: Int?            // keyboard selection
     @Published var pressed: String?
     @Published var hoveredIndex: Int?
@@ -102,7 +122,7 @@ final class DockState: ObservableObject {
         }
     }
 
-    /// Width of the row without magnification.
+    /// Length of the row without magnification (its height when vertical).
     var baseRowWidth: CGFloat {
         let m = metrics
         let widths = slots.map { slot -> CGFloat in
@@ -156,41 +176,23 @@ struct DockView: View {
     @ObservedObject var state: DockState
 
     var body: some View {
-        let m = state.metrics
         GeometryReader { geo in
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                if let stack = state.stack, let center = state.centerOfItem(stack.item.id) {
-                    let available = geo.size.height - m.rowHeight - m.stackGap
-                    let width = m.stackWidth(stack)
-                    let x = center + (geo.size.width - state.baseRowWidth) / 2 - width / 2
-                    DockStackView(state: state, stack: stack)
-                        .frame(width: width, height: min(m.stackHeight(stack), available))
-                        .padding(.leading, min(max(x, 8), geo.size.width - width - 8))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, m.stackGap)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
-                }
-                row
-                    .padding(.horizontal, m.padding)
-                    .background(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: m.tileSize * 0.4, style: .continuous)
-                            .fill(Color(nsColor: .windowBackgroundColor).opacity(dockFrost))
-                            .glassEffect(dockGlass, in: .rect(cornerRadius: m.tileSize * 0.4, style: .continuous))
-                            .frame(height: m.tileSize + m.padding * 2 + 6)
-                    }
-                    .frame(maxWidth: .infinity)
+            let size = geo.size
+            Group {
+                if state.placement.isVertical { vertical(size) } else { horizontal(size) }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
+            .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
                     guard state.stack == nil else { state.hoverX = nil; return }
-                    // Map panel x to unmagnified row x (row is centered in the panel).
-                    let x = p.x - (geo.size.width - state.baseRowWidth) / 2
+                    // Map the panel point to the unmagnified row (the row is centered in the panel).
+                    let along = state.placement.isVertical
+                        ? p.y - (size.height - state.baseRowWidth) / 2
+                        : p.x - (size.width - state.baseRowWidth) / 2
                     withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.85)) {
-                        state.hoverX = x
+                        state.hoverX = along
                     }
                 case .ended:
                     withAnimation(.spring(response: 0.3)) { state.hoverX = nil }
@@ -200,21 +202,82 @@ struct DockView: View {
         }
     }
 
-    private var row: some View {
+    /// Row at the bottom, tab lists above it.
+    private func horizontal(_ size: CGSize) -> some View {
         let m = state.metrics
-        return HStack(alignment: .bottom, spacing: m.spacing) {
-            ForEach(Array(state.slots.enumerated()), id: \.element.id) { i, slot in
-                switch slot {
-                case .separator:
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.22))
-                        .frame(width: 1, height: m.tileSize * 0.82)
-                        .frame(width: m.separatorWidth)
-                        .padding(.bottom, m.padding + 3 + m.tileSize * 0.09)
-                case .item(let item, let index):
-                    tile(item, index: index, scale: state.scale(forSlot: i))
-                }
+        return VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if let stack = state.stack, let center = state.centerOfItem(stack.item.id) {
+                let available = size.height - m.rowHeight - m.stackGap
+                let width = m.stackWidth(stack)
+                let x = center + (size.width - state.baseRowWidth) / 2 - width / 2
+                DockStackView(state: state, stack: stack)
+                    .frame(width: width, height: min(m.stackHeight(stack), available))
+                    .padding(.leading, min(max(x, 8), size.width - width - 8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, m.stackGap)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
             }
+            HStack(alignment: .bottom, spacing: m.spacing) { slots }
+                .padding(.horizontal, m.padding)
+                .background(alignment: .bottom) { glass.frame(height: m.rowHeight) }
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Column against the left / right edge, tab lists beside it.
+    private func vertical(_ size: CGSize) -> some View {
+        let m = state.metrics
+        let left = state.placement == .left
+        let column = VStack(alignment: left ? .leading : .trailing, spacing: m.spacing) { slots }
+            .padding(.vertical, m.padding)
+            .background(alignment: left ? .leading : .trailing) { glass.frame(width: m.rowHeight) }
+            .frame(maxHeight: .infinity)
+        return HStack(spacing: 0) {
+            if left { column } else { Spacer(minLength: 0) }
+            if let stack = state.stack, let center = state.centerOfItem(stack.item.id) {
+                let height = min(m.stackHeight(stack), size.height - 16)
+                let y = center + (size.height - state.baseRowWidth) / 2 - height / 2
+                DockStackView(state: state, stack: stack)
+                    .frame(width: m.stackWidth(stack), height: height)
+                    .padding(.top, min(max(y, 8), size.height - height - 8))
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(left ? .leading : .trailing, m.stackGap)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: left ? .leading : .trailing)))
+            }
+            if left { Spacer(minLength: 0) } else { column }
+        }
+    }
+
+    private var glass: some View {
+        let m = state.metrics
+        return RoundedRectangle(cornerRadius: m.tileSize * 0.4, style: .continuous)
+            .fill(Color(nsColor: .windowBackgroundColor).opacity(dockFrost))
+            .glassEffect(dockGlass, in: .rect(cornerRadius: m.tileSize * 0.4, style: .continuous))
+    }
+
+    private var slots: some View {
+        ForEach(Array(state.slots.enumerated()), id: \.element.id) { i, slot in
+            switch slot {
+            case .separator: separator
+            case .item(let item, let index): tile(item, index: index, scale: state.scale(forSlot: i))
+            }
+        }
+    }
+
+    @ViewBuilder private var separator: some View {
+        let m = state.metrics
+        let line = Rectangle().fill(Color.primary.opacity(0.22))
+        let inset = m.padding + 3 + m.tileSize * 0.09
+        switch state.placement {
+        case .left, .right:
+            line.frame(width: m.tileSize * 0.82, height: 1)
+                .frame(height: m.separatorWidth)
+                .padding(state.placement == .left ? .leading : .trailing, inset)
+        case .free, .bottom:
+            line.frame(width: 1, height: m.tileSize * 0.82)
+                .frame(width: m.separatorWidth)
+                .padding(.bottom, inset)
         }
     }
 
@@ -223,51 +286,48 @@ struct DockView: View {
         let size = m.tileSize * scale
         let showLabel = state.stack == nil
             && (state.hoveredIndex == index || (state.hoveredIndex == nil && state.selected == index))
-        return VStack(spacing: 0) {
-            Image(nsImage: item.icon)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: size, height: size)
-                .brightness(state.pressed == item.id ? -0.25 : 0)
-                .overlay(alignment: .bottomTrailing) {
-                    if let kind = item.automation {
-                        AutomationBadge(kind: kind, size: size * 0.34).offset(x: size * 0.04, y: size * 0.04)
-                    }
+        let icon = Image(nsImage: item.icon)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .brightness(state.pressed == item.id ? -0.25 : 0)
+            .overlay(alignment: .bottomTrailing) {
+                if let kind = item.automation {
+                    AutomationBadge(kind: kind, size: size * 0.34).offset(x: size * 0.04, y: size * 0.04)
                 }
-                .overlay(alignment: .topTrailing) {
-                    if item.isAudible {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .font(.system(size: size * 0.16, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .padding(size * 0.07)
-                            .glassEffect(.regular, in: .circle)
-                            .offset(x: size * 0.06, y: -size * 0.06)
-                            .help("Playing audio")
-                    }
+            }
+            .overlay(alignment: .topTrailing) {
+                if item.isAudible {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: size * 0.16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .padding(size * 0.07)
+                        .glassEffect(.regular, in: .circle)
+                        .offset(x: size * 0.06, y: -size * 0.06)
+                        .help("Playing audio")
                 }
-                .overlay(alignment: .top) {
-                    if showLabel {
-                        Text(item.name)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .fixedSize()
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .glassEffect(.regular, in: .capsule)
-                            .offset(y: -34)
-                            .transition(.opacity)
-                            .allowsHitTesting(false)
-                    }
-                }
-            Circle()
-                .fill(Color.primary.opacity(item.isRunning ? 0.6 : 0))
-                .frame(width: 4, height: 4)
-                .padding(.top, 2)
-                .padding(.bottom, m.padding - 1)
+            }
+            .overlay(alignment: labelAlignment) {
+                if showLabel { label(item.name, iconSize: size) }
+            }
+        let dot = Circle()
+            .fill(Color.primary.opacity(item.isRunning ? 0.6 : 0))
+            .frame(width: 4, height: 4)
+        // The running dot sits on the screen-edge side of the icon, like the real Dock.
+        return Group {
+            switch state.placement {
+            case .left:
+                HStack(spacing: 0) { dot.padding(.leading, m.padding - 1).padding(.trailing, 2); icon }
+                    .padding(.trailing, m.padding)
+            case .right:
+                HStack(spacing: 0) { icon; dot.padding(.leading, 2).padding(.trailing, m.padding - 1) }
+                    .padding(.leading, m.padding)
+            case .free, .bottom:
+                VStack(spacing: 0) { icon; dot.padding(.top, 2).padding(.bottom, m.padding - 1) }
+                    .padding(.top, m.padding)
+            }
         }
-        .padding(.top, m.padding)
         .contentShape(Rectangle())
         .onHover { inside in
             if inside { state.hoveredIndex = index; state.selected = nil }
@@ -281,6 +341,36 @@ struct DockView: View {
                     state.onOpen(item)
                 }
         )
+    }
+
+    private var labelAlignment: Alignment {
+        switch state.placement {
+        case .left: .leading
+        case .right: .trailing
+        case .free, .bottom: .top
+        }
+    }
+
+    /// The app's name: above the icon, or beside it when the dock is on the left / right.
+    private func label(_ name: String, iconSize: CGFloat) -> some View {
+        let text = Text(name)
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .glassEffect(.regular, in: .capsule)
+        let gap: CGFloat = 14
+        return Group {
+            switch state.placement {
+            case .left: text.alignmentGuide(.leading) { _ in -(iconSize + gap) }
+            case .right: text.alignmentGuide(.trailing) { d in d.width + iconSize + gap }
+            case .free, .bottom: text.offset(y: -34)
+            }
+        }
+        .transition(.opacity)
+        .allowsHitTesting(false)
     }
 }
 
