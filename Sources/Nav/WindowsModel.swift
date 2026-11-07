@@ -10,6 +10,8 @@ struct WindowInfo: Identifiable {
     let scWindow: SCWindow
     var image: NSImage?
     var tabs: [TabInfo] = []   // iTerm2 / Chrome: shown as a compact list instead of a preview
+    /// In its own full-screen Space; the first one gets the F key in the windows view.
+    var isFullScreen = false
 }
 
 /// Something you can switch to: a window, or one tab of a window.
@@ -60,8 +62,9 @@ enum WindowsModel {
         for w in windows {
             guard let owner = w.owningApplication else { continue }
             let pid = owner.processID
-            let info = WindowInfo(id: w.windowID, title: w.title ?? "", frame: w.frame, pid: pid,
+            var info = WindowInfo(id: w.windowID, title: w.title ?? "", frame: w.frame, pid: pid,
                                   bundleID: owner.bundleIdentifier, scWindow: w)
+            info.isFullScreen = Spaces.isFullScreen(w.windowID)
             if let i = index[pid] {
                 groups[i].windows.append(info)
             } else {
@@ -219,3 +222,26 @@ enum WindowsModel {
 /// Private but long-stable API (used by AltTab, Hammerspoon, etc.) mapping an AX window to its CGWindowID.
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
+
+/// Which Space a window is on, through SkyLight's private API (what AltTab does): a window's
+/// size can't tell full screen from zoomed, e.g. below the notch with the Dock hidden.
+enum Spaces {
+    private static let connection = CGSMainConnectionID()
+
+    static func isFullScreen(_ window: CGWindowID) -> Bool {
+        let ids = [NSNumber(value: window)] as CFArray
+        guard let spaces = CGSCopySpacesForWindows(connection, 0x7, ids)?.takeRetainedValue() as? [NSNumber] else {
+            return false
+        }
+        return spaces.contains { CGSSpaceGetType(connection, $0.uint64Value) == 4 }   // 4 = full-screen Space
+    }
+}
+
+@_silgen_name("CGSMainConnectionID")
+private func CGSMainConnectionID() -> Int32
+
+@_silgen_name("CGSCopySpacesForWindows")
+private func CGSCopySpacesForWindows(_ cid: Int32, _ mask: Int32, _ windows: CFArray) -> Unmanaged<CFArray>?
+
+@_silgen_name("CGSSpaceGetType")
+private func CGSSpaceGetType(_ cid: Int32, _ space: UInt64) -> Int32

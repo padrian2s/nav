@@ -333,9 +333,10 @@ final class WindowsController {
             }
             return true
         }
-        if mods.isDisjoint(with: [.control, .option]), let e = editorKeyCodes[Int(event.keyCode)] {   // R F V T G B
+        if mods.isDisjoint(with: [.control, .option]), let key = editorKeyCodes[Int(event.keyCode)] {   // R F V T G B
+            if key == "F", let full = state.fullScreenTarget { focus(full); return true }
             let editors = state.editorTargets
-            if editors.indices.contains(e) { focus(editors[e]) }
+            if let e = state.editorKeyList.firstIndex(of: key), editors.indices.contains(e) { focus(editors[e]) }
             return true
         }
         if state.modern, let handled = handleModernKey(event, mods: mods) { return handled }
@@ -369,8 +370,9 @@ final class WindowsController {
     }
 }
 
-/// Physical R F V T G B keys (layout independent) → editor index, as in `WindowsState.editorKeys`.
-let editorKeyCodes: [Int: Int] = [15: 0, 3: 1, 9: 2, 17: 3, 5: 4, 11: 5]
+/// Physical R F V T G B keys (layout independent) → their letter, as in `WindowsState.editorKeys`.
+/// F is the full-screen window's when there is one.
+let editorKeyCodes: [Int: String] = [15: "R", 3: "F", 9: "V", 17: "T", 5: "G", 11: "B"]
 
 /// Physical number-row keys 1…9, 0 (layout independent) → item index.
 let numberRowKeys: [Int: Int] = [18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8, 29: 9]
