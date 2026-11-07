@@ -339,10 +339,19 @@ final class DockController {
     // MARK: Context menu (mirrors the real Dock's)
 
     private func menu(for item: DockItem) -> NSMenu {
+        Self.menu(for: item) { [weak self] in self?.hide() }
+    }
+
+    /// The tile's context menu; `dismiss` closes whichever popup it was opened from
+    /// (⌘E, or the ⌘E apps strip in the windows view).
+    /// `onQuit` runs after Quit / Force Quit, so the windows view can drop that app's windows.
+    static func menu(for item: DockItem, dismiss: @escaping () -> Void,
+                     onQuit: @escaping (NSRunningApplication) -> Void = { _ in }) -> NSMenu {
+        let open = { dismiss(); launch(item) }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let showInFinder = ActionItem("Show in Finder") { [weak self] in
-            self?.hide()
+        let showInFinder = ActionItem("Show in Finder") {
+            dismiss()
             NSWorkspace.shared.activateFileViewerSelecting([item.url])
         }
 
@@ -360,30 +369,30 @@ final class DockController {
                 NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
             }
             if let app = running {
-                menu.addItem(ActionItem("Show All Windows") { [weak self] in self?.open(item) })
-                menu.addItem(ActionItem(app.isHidden ? "Unhide" : "Hide") { [weak self] in
-                    self?.hide()
+                menu.addItem(ActionItem("Show All Windows") { open() })
+                menu.addItem(ActionItem(app.isHidden ? "Unhide" : "Hide") { 
+                    dismiss()
                     if app.isHidden { app.unhide() } else { app.hide() }
                 })
                 if item.bundleID != "com.apple.finder" {
-                    menu.addItem(ActionItem("Quit") { DockController.quit(app) })
+                    menu.addItem(ActionItem("Quit") { DockController.quit(app); onQuit(app) })
                     // Hold ⌥ to swap Quit for Force Quit, like the Dock.
-                    let force = ActionItem("Force Quit", modifiers: .option) { app.forceTerminate() }
+                    let force = ActionItem("Force Quit", modifiers: .option) { app.forceTerminate(); onQuit(app) }
                     force.isAlternate = true
                     menu.addItem(force)
                 }
             } else {
-                menu.addItem(ActionItem("Open") { [weak self] in self?.open(item) })
+                menu.addItem(ActionItem("Open") { open() })
             }
 
         case .folder:
-            menu.addItem(ActionItem("Open \"\(item.name)\"") { [weak self] in self?.open(item) })
+            menu.addItem(ActionItem("Open \"\(item.name)\"") { open() })
             menu.addItem(showInFinder)
 
         case .trash:
-            menu.addItem(ActionItem("Open") { [weak self] in self?.open(item) })
+            menu.addItem(ActionItem("Open") { open() })
             menu.addItem(.separator())
-            menu.addItem(ActionItem("Empty Trash") { [weak self] in self?.emptyTrash() })
+            menu.addItem(ActionItem("Empty Trash") { emptyTrash(dismiss: dismiss) })
         }
         return menu
     }
@@ -396,8 +405,8 @@ final class DockController {
         if error != nil { NSWorkspace.shared.open(DockModel.trashURL) }
     }
 
-    private func emptyTrash() {
-        hide()
+    private static func emptyTrash(dismiss: () -> Void) {
+        dismiss()
         let alert = NSAlert()
         alert.messageText = "Are you sure you want to permanently erase the items in the Trash?"
         alert.informativeText = "You can’t undo this action."

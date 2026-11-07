@@ -12,7 +12,13 @@ final class WindowsController {
     init() {
         let host = MenuHostingView(rootView: SwitcherView(state: state))
         host.menuForEvent = { [weak self] _ in
-            guard let self, let t = self.state.flat.first(where: { $0.id == self.state.hovered }) else { return nil }
+            guard let self else { return nil }
+            // The ⌘E apps strip: the same menu as in ⌘E.
+            if let id = self.state.strip.hover.id, let item = self.state.strip.items.first(where: { $0.id == id }) {
+                return DockController.menu(for: item, dismiss: { [weak self] in self?.hide() },
+                                           onQuit: { [weak self] app in self?.stripAppQuit(app) })
+            }
+            guard let t = self.state.flat.first(where: { $0.id == self.state.hovered }) else { return nil }
             return self.menu(for: t)
         }
         panel.contentView = host
@@ -247,6 +253,18 @@ final class WindowsController {
             return
         }
         focus(target)
+    }
+
+    /// Quit from the ⌘E apps strip's menu: its windows go, and its dot once it's gone.
+    private func stripAppQuit(_ app: NSRunningApplication) {
+        state.remove(pid: app.processIdentifier)
+        if state.groups.isEmpty && !state.strip.isShown { return hide() }
+        panel.resize(to: panelSize())
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.state.strip.items = AppStrip.items(self.state.strip.config)
+            self.panel.resize(to: self.panelSize())
+        }
     }
 
     private func quit(_ target: SwitchTarget, force: Bool) {
