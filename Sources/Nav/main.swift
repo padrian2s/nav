@@ -31,6 +31,7 @@ func toggleWindows() { dock.hide(); claudeBoard.hide(); windows.toggle() }
 func toggleClaudeBoard() { dock.hide(); windows.hide(); claudeBoard.toggle() }
 
 let menuBar = MenuBar(windows: toggleWindows, dock: toggleDock, claude: toggleClaudeBoard)
+Updater.shared.startChecking()
 
 /// ⌘Tab: opens the windows view; pressed again while it's open, ⌘Tab / ⌘⇧Tab go to the next / previous app.
 func commandTab(step: Int) {

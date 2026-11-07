@@ -50,6 +50,14 @@ final class MenuBar: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
+        if let version = Updater.shared.latestVersion {
+            menu.addItem(ActionItem("Update to Nav \(version)") { Updater.shared.install() })
+        } else {
+            menu.addItem(ActionItem("Check for Updates") {
+                Updater.shared.check()
+                SettingsWindowController.shared.show(pane: .general)
+            })
+        }
         menu.addItem(ActionItem("Settings…", key: ",", modifiers: .command) { SettingsWindowController.shared.show() })
         menu.addItem(ActionItem("Quit Nav", key: "q", modifiers: .command) { NSApp.terminate(nil) })
     }

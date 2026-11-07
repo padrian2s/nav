@@ -40,6 +40,8 @@ Permissions (only the first time):
 
 Settings has a sidebar with five panes (General, Windows view, Dock, Shortcuts, Popup border), follows the system Light / Dark look, and opens on the pane you used last.
 
+**Updates**: Nav checks GitHub for a new release at launch and every 6 hours. Settings → General shows your version and a **Check for updates** / **Update to X** button (also in the menu bar icon's menu); updating downloads the release, replaces Nav.app and restarts Nav. `open -a Nav --args --update` updates without asking.
+
 **General** (in ⚙︎ Settings):
 - **Open Nav at login**: on by default. Nav registers itself as a macOS Login Item.
 - **Hide the macOS Dock**: while Nav runs, the real Dock stays out of sight (it never slides in), so ⌘E takes its place. Quitting Nav brings it back: use the ⏻ at the bottom of ⌘⇧E or **Quit Nav** in Settings.

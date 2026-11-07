@@ -182,10 +182,10 @@ final class SettingsWindowController {
     private var window: NSWindow?
     private let model = SettingsModel()
 
-    func show() {
+    func show(pane: SettingsPane? = nil) {
         model.config = Config.current   // pick up hand edits to the file
         model.refreshStripApps()
-        if let saved = UserDefaults.standard.string(forKey: "settingsPane").flatMap(SettingsPane.init(rawValue:)) {
+        if let saved = pane ?? UserDefaults.standard.string(forKey: "settingsPane").flatMap(SettingsPane.init(rawValue:)) {
             model.pane = saved
         }
         if window == nil {
@@ -300,6 +300,7 @@ struct SettingsTheme {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject var updater = Updater.shared
     @Environment(\.colorScheme) private var scheme
 
     private var t: SettingsTheme { SettingsTheme(dark: scheme == .dark) }
@@ -386,6 +387,7 @@ struct SettingsView: View {
     }
 
     private var general: some View {
+        VStack(spacing: 22) {
         card {
             row { Text("Open Nav at login").font(.system(size: 13.5)) } trailing: { toggle($model.config.launchAtLogin) }
             separator
@@ -395,6 +397,48 @@ struct SettingsView: View {
             row { described("Pass ⌘E / ⌘⇧E to remote desktops",
                             "While Screen Sharing, Remote Desktop, VNC or a VM is in front, the shortcuts go to the remote Mac.") }
                 trailing: { toggle($model.config.passShortcutsToRemoteApps) }
+        }
+        updates
+        }
+    }
+
+    /// Nav's version, and updating to the latest GitHub release in one click.
+    private var updates: some View {
+        card {
+            row {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Nav \(Updater.currentVersion)").font(.system(size: 13.5))
+                    Text(updateStatus).font(.system(size: 12)).foregroundStyle(updateFailed ? Color.red.opacity(0.85) : t.sec)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } trailing: {
+                switch updater.status {
+                case .available(let v): pill("Update to \(v)") { updater.install() }
+                case .checking, .downloading, .installing: ProgressView().controlSize(.small)
+                default: pill("Check for updates") { updater.check() }
+                }
+            }
+            if !updater.notes.isEmpty, updater.latestVersion != nil {
+                separator
+                Text(updater.notes)
+                    .font(.system(size: 12)).foregroundStyle(t.sec).lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+        }
+    }
+
+    private var updateFailed: Bool { if case .failed = updater.status { true } else { false } }
+
+    private var updateStatus: String {
+        switch updater.status {
+        case .idle: "Updates come from GitHub releases."
+        case .checking: "Checking GitHub…"
+        case .upToDate: "Up to date."
+        case .available(let v): "Nav \(v) is out. Updating restarts Nav."
+        case .downloading(let v): "Downloading Nav \(v)…"
+        case .installing: "Installing and restarting…"
+        case .failed(let message): message
         }
     }
 
