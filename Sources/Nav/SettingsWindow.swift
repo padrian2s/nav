@@ -11,7 +11,44 @@ final class SettingsModel: ObservableObject {
             if config.hideDock != oldValue.hideDock, config.hideDock != MacDock.isHidden { MacDock.setHidden(config.hideDock) }
             if config.commandTab != oldValue.commandTab { updateHotKeysForFrontmostApp() }
             if config.shortcuts != oldValue.shortcuts { registerHotKeys() }
+            if config.appStrip.extra != oldValue.appStrip.extra { refreshStripApps() }
         }
+    }
+    /// What can go in the ⌘E apps strip (the dock's tiles, then added apps), listed with a switch each.
+    @Published private(set) var stripApps: [DockItem] = []
+
+    func refreshStripApps() {
+        // Playwright / Puppeteer instances come and go, so they can't be switched off by id.
+        stripApps = AppStrip.candidates(config.appStrip).filter { $0.automation == nil }
+    }
+
+    func isInStrip(_ item: DockItem) -> Binding<Bool> {
+        Binding(get: { [weak self] in self?.config.appStrip.hidden.contains(item.id) != true },
+                set: { [weak self] on in
+                    guard let self else { return }
+                    self.config.appStrip.hidden.removeAll { $0 == item.id }
+                    if !on { self.config.appStrip.hidden.append(item.id) }
+                })
+    }
+
+    func isAddedToStrip(_ item: DockItem) -> Bool { config.appStrip.extra.contains(item.id) }
+
+    /// "Add app…": any app, after the dock's.
+    func addStripApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK else { return }
+        let paths = panel.urls.map(\.path).filter { path in !stripApps.contains { $0.id == path } }
+        config.appStrip.extra += paths
+        config.appStrip.hidden.removeAll { panel.urls.map(\.path).contains($0) }
+    }
+
+    func removeFromStrip(_ item: DockItem) {
+        config.appStrip.extra.removeAll { $0 == item.id }
+        config.appStrip.hidden.removeAll { $0 == item.id }
     }
     /// The pane shown in the sidebar.
     /// The pane shown in the sidebar; Settings opens on the last one.
@@ -147,6 +184,7 @@ final class SettingsWindowController {
 
     func show() {
         model.config = Config.current   // pick up hand edits to the file
+        model.refreshStripApps()
         if let saved = UserDefaults.standard.string(forKey: "settingsPane").flatMap(SettingsPane.init(rawValue:)) {
             model.pane = saved
         }
@@ -381,6 +419,66 @@ struct SettingsView: View {
                               : "⌘Tab is the macOS app switcher; ⌘⇧E shows Nav's windows view.")
                 } trailing: { segmented($model.config.commandTab, [("Nav", true), ("macOS", false)]) }
             }
+            appStripSettings
+        }
+    }
+
+    /// The ⌘E apps strip in the windows view: on/off, side, size, names, and which apps.
+    private var appStripSettings: some View {
+        let strip = model.config.appStrip
+        return VStack(alignment: .leading, spacing: 10) {
+            header("⌘E APPS")
+            card {
+                row {
+                    described("Show the ⌘E apps", "A strip of the dock's apps inside the windows view (⌘Tab); click one to open it.")
+                } trailing: { toggle($model.config.appStrip.enabled) }
+                Group {
+                    separator
+                    row(vertical: 12) { Text("Position").font(.system(size: 13.5)) } trailing: {
+                        segmented($model.config.appStrip.position, AppStripPosition.allCases.map { ($0.title, $0.rawValue) })
+                    }
+                    separator
+                    slider("Icon size", $model.config.appStrip.iconSize, 20...72, step: 2, unit: "pt")
+                    separator
+                    row { Text("Names under the icons").font(.system(size: 13.5)) } trailing: { toggle($model.config.appStrip.names) }
+                }
+                .opacity(strip.enabled ? 1 : 0.4)
+                .allowsHitTesting(strip.enabled)
+            }
+            card {
+                ForEach(Array(model.stripApps.enumerated()), id: \.element.id) { i, item in
+                    if i > 0 { separator }
+                    row(vertical: 7) {
+                        HStack(spacing: 10) {
+                            Image(nsImage: item.icon).resizable().interpolation(.high).frame(width: 22, height: 22)
+                            Text(item.name).font(.system(size: 13.5)).lineLimit(1)
+                            if model.isAddedToStrip(item) {
+                                Text("Added").font(.system(size: 11)).foregroundStyle(t.sec)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(Capsule().fill(t.fill))
+                            }
+                        }
+                    } trailing: {
+                        HStack(spacing: 12) {
+                            if model.isAddedToStrip(item) {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 15)).foregroundStyle(t.ter)
+                                    .contentShape(Circle())
+                                    .onTapGesture { model.removeFromStrip(item) }
+                                    .help("Remove from the strip")
+                            }
+                            toggle(model.isInStrip(item))
+                        }
+                    }
+                }
+                separator
+                row(vertical: 10) {
+                    Text("The ⌘E dock's apps, then the ones you add. Running apps change as you open and quit them.")
+                        .font(.system(size: 12)).foregroundStyle(t.sec).fixedSize(horizontal: false, vertical: true)
+                } trailing: { pill("Add app…") { model.addStripApp() } }
+            }
+            .opacity(strip.enabled ? 1 : 0.4)
+            .allowsHitTesting(strip.enabled)
         }
     }
 

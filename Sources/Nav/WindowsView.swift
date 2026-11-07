@@ -64,6 +64,8 @@ final class WindowsState: ObservableObject {
     }
     /// Modern: where the mouse is over a tab/window row, for the preview next to it.
     let peek = PeekState()
+    /// The ⌘E apps along one side of the view (see `Config.appStrip`).
+    let strip = AppStripState()
     let metrics = WindowsMetrics()
     var onFocus: (SwitchTarget) -> Void = { _ in }
     var onClose: (SwitchTarget) -> Void = { _ in }
@@ -263,6 +265,7 @@ struct WindowsView: View {
 
     var body: some View {
         let m = state.metrics
+        WithAppStrip(state.strip, modern: false) {
         Group {
             if state.needsPermission {
                 permissionPrompt
@@ -289,6 +292,7 @@ struct WindowsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !state.needsPermission { footer }
         }

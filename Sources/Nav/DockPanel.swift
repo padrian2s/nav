@@ -390,7 +390,7 @@ final class DockController {
 
     /// Opening ~/.Trash as a plain folder can show it empty (its contents are
     /// privacy-protected); Finder's own Trash window lists every volume's trash.
-    private func openTrash() {
+    private static func openTrash() {
         var error: NSDictionary?
         NSAppleScript(source: "tell application \"Finder\"\nactivate\nopen trash\nend tell")?.executeAndReturnError(&error)
         if error != nil { NSWorkspace.shared.open(DockModel.trashURL) }
@@ -414,6 +414,12 @@ final class DockController {
 
     private func open(_ item: DockItem) {
         hide()
+        Self.launch(item)
+    }
+
+    /// What a click on a dock icon does: activates or opens the app, opens the folder or the Trash.
+    /// Also used by the ⌘E apps strip in the windows view.
+    static func launch(_ item: DockItem) {
         switch item.kind {
         case .app:
             if let pid = item.pid, let app = NSRunningApplication(processIdentifier: pid) {

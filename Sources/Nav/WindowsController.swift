@@ -36,6 +36,11 @@ final class WindowsController {
             self.state.commandTab.toggle()
             SettingsWindowController.shared.setCommandTab(self.state.commandTab)
         }
+        state.strip.onOpen = { [weak self] item in
+            self?.hide()
+            if item.kind == .app { AppUsage.record(item.bundleID) }
+            DockController.launch(item)
+        }
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         Task { @MainActor in Tabs.cached = await Tabs.fetchAll() }   // warm the cache for the first popup
     }
@@ -72,8 +77,11 @@ final class WindowsController {
         state.peek.id = nil
         state.hovered = nil
         state.selected = nil
+        state.strip.config = config.appStrip
+        state.strip.hover.id = nil
 
         guard WindowsModel.hasScreenRecording else {
+            state.strip.items = []
             CGRequestScreenCaptureAccess()   // system prompt, first time only
             state.needsPermission = true
             state.groups = []
@@ -83,6 +91,7 @@ final class WindowsController {
             return
         }
         state.needsPermission = false
+        state.strip.items = config.appStrip.enabled ? AppStrip.items(config.appStrip) : []
 
         loadTask?.cancel()
         loadTask = Task { @MainActor [weak self] in
@@ -168,11 +177,16 @@ final class WindowsController {
             : NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
         let vf = (screen ?? NSScreen.main!).visibleFrame
         let margin = state.border.margin * 2
+        let maxWidth = vf.width * 0.92, maxHeight = vf.height * 0.85
+        let strip = state.strip
+        // Left / right strips take their width from the content's.
+        let side = strip.isShown && strip.config.placement.isVertical ? strip.thickness + 1 : 0
         if state.modern {
-            let content = ModernMetrics().contentSize(state, maxWidth: vf.width * 0.92)
-            return NSSize(width: content.width + margin, height: min(content.height, vf.height * 0.85) + margin)
+            let content = strip.wrap(ModernMetrics().contentSize(state, maxWidth: maxWidth - side),
+                                     maxWidth: maxWidth, maxHeight: maxHeight)
+            return NSSize(width: content.width + margin, height: min(content.height, maxHeight) + margin)
         }
-        let content = state.metrics.contentSize(state.groups)
+        let content = strip.wrap(state.metrics.contentSize(state.groups), maxWidth: maxWidth, maxHeight: maxHeight)
         return NSSize(width: min(content.width, vf.width * 0.92) + margin,
                       height: min(content.height, vf.height * 0.85) + margin)
     }

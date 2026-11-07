@@ -19,6 +19,8 @@ struct Config: Codable {
     var chromeProfiles = "right"
     /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
     var commandTab = true
+    /// The ⌘E dock's apps as a strip in the windows view (⌘Tab).
+    var appStrip = AppStripConfig()
     /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id, or one of Nav's
     /// features ("nav:claude", see `NavFeature`); "" (or a missing entry) leaves that key to the most used app.
     var appKeys: [String] = []
@@ -60,6 +62,33 @@ struct Config: Codable {
     func isRemoteApp(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
         return Config.builtInRemoteApps.contains(bundleID) || remoteApps.contains(bundleID)
+    }
+
+    struct AppStripConfig: Codable, Equatable {
+        var enabled = true
+        /// "top", "bottom", "left" or "right" of the windows view.
+        var position = "bottom"
+        var iconSize: Double = 40
+        /// App names under the icons.
+        var names = false
+        /// Tiles left out, by `DockItem.id` (the app's or folder's path, "trash").
+        var hidden: [String] = []
+        /// Apps added after the dock's, by path.
+        var extra: [String] = []
+
+        var placement: AppStripPosition { AppStripPosition(rawValue: position) ?? .bottom }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+            position = try c.decodeIfPresent(String.self, forKey: .position) ?? "bottom"
+            iconSize = try c.decodeIfPresent(Double.self, forKey: .iconSize) ?? 40
+            names = try c.decodeIfPresent(Bool.self, forKey: .names) ?? false
+            hidden = try c.decodeIfPresent([String].self, forKey: .hidden) ?? []
+            extra = try c.decodeIfPresent([String].self, forKey: .extra) ?? []
+        }
     }
 
     /// Border around the ⌘⇧E popup.
@@ -128,6 +157,7 @@ struct Config: Codable {
         dockPosition = try c.decodeIfPresent(String.self, forKey: .dockPosition) ?? "free"
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
+        appStrip = try c.decodeIfPresent(AppStripConfig.self, forKey: .appStrip) ?? AppStripConfig()
         appKeys = try c.decodeIfPresent([String].self, forKey: .appKeys) ?? []
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? [:]
         editorApps = try c.decodeIfPresent([String].self, forKey: .editorApps) ?? Config().editorApps

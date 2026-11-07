@@ -79,6 +79,12 @@ enum DockModel {
         }
     }
 
+    /// An app tile for any app (one added to the ⌘E apps strip in Settings).
+    static func appItem(_ url: URL) -> DockItem {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return appItem(url, running: running, audible: [])
+    }
+
     private static func appItem(_ url: URL, running: Set<String>, audible: Set<String>) -> DockItem {
         let bundleID = Bundle(url: url)?.bundleIdentifier
         let image = bundleID == "com.apple.iCal" ? CalendarIcon.make() : icon(for: url)

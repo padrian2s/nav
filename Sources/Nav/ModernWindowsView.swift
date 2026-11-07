@@ -115,6 +115,7 @@ struct ModernWindowsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            WithAppStrip(state.strip, modern: true) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: m.rowGap) {
@@ -134,6 +135,7 @@ struct ModernWindowsView: View {
                     guard let id else { return }
                     withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
                 }
+            }
             }
             footer
         }
