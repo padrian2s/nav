@@ -120,8 +120,21 @@ final class WindowsState: ObservableObject {
         hovered = nil
     }
 
-    /// Shortcut keys: 1…9, 0, then (Modern) the letters not kept for editors.
-    static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init).filter { !editorKeys.contains($0) }
+    /// Shortcut keys: 1…9, 0, then (Modern) the letters not kept for editors or YouTube.
+    static let shortcutKeys = Array("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init)
+        .filter { !editorKeys.contains($0) && $0 != youTubeKey }
+    /// The YouTube tab that's playing.
+    static let youTubeKey = "Y"
+
+    /// A YouTube tab playing sound (Chrome's "Audio playing"); the first one if there are several.
+    var youTubeTarget: SwitchTarget? {
+        groups.flatMap(targets).first { $0.tab.map(Self.isPlayingYouTube) == true }
+    }
+
+    static func isPlayingYouTube(_ tab: TabInfo) -> Bool {
+        guard tab.isAudible, let host = tab.url.flatMap(URL.init(string:))?.host?.lowercased() else { return false }
+        return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
+    }
     /// Editor windows (see `Config.editorApps`): the R F V column under the left hand, then T G B.
     static let editorKeys = ["R", "F", "V", "T", "G", "B"]
     /// `Config.editorApps`, read on every show.
@@ -141,8 +154,8 @@ final class WindowsState: ObservableObject {
 
     /// Editor windows in display order, one per editor key.
     var editorTargets: [SwitchTarget] {
-        let full = fullScreenTarget?.id
-        return Array(flat.filter { !isAppCard($0) && $0.id != full && $0.window.bundleID.map(editorApps.contains) == true }
+        let taken = [fullScreenTarget?.id, youTubeTarget?.id]
+        return Array(flat.filter { !isAppCard($0) && !taken.contains($0.id) && $0.window.bundleID.map(editorApps.contains) == true }
             .prefix(editorKeyList.count))
     }
 
@@ -171,7 +184,7 @@ final class WindowsState: ObservableObject {
 
     /// Windows/tabs numbered after the frequent apps (editor windows have their letters).
     var keyed: [SwitchTarget] {
-        let editors = Set(editorTargets.map(\.id) + [fullScreenTarget?.id].compactMap { $0 })
+        let editors = Set(editorTargets.map(\.id) + [fullScreenTarget?.id, youTubeTarget?.id].compactMap { $0 })
         return flat.filter { !isAppCard($0) && !editors.contains($0.id) }
     }
 
@@ -179,6 +192,7 @@ final class WindowsState: ObservableObject {
     /// then letters in Modern.
     func shortcut(for id: String) -> String? {
         guard let t = flat.first(where: { $0.id == id }) else { return nil }
+        if id == youTubeTarget?.id { return Self.youTubeKey }
         if id == fullScreenTarget?.id { return "F" }
         if isAppCard(t) { return frequent.firstIndex(of: t.window.pid).map { Self.shortcutKeys[$0] } }
         if let e = editorTargets.firstIndex(where: { $0.id == id }) { return editorKeyList[e] }

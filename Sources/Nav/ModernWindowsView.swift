@@ -409,7 +409,8 @@ struct ModernWindowsView: View {
 
     private var footer: some View {
         let profiles = state.groups.first { !$0.chromeProfiles.isEmpty }?.chromeProfiles.count ?? 0
-        let hints = (state.fullScreenTarget == nil ? [] : ["F full screen"])
+        let hints = (state.youTubeTarget == nil ? [] : ["Y YouTube"])
+            + (state.fullScreenTarget == nil ? [] : ["F full screen"])
             + (state.editorTargets.isEmpty ? [] : [state.fullScreenTarget == nil ? "R F V editors" : "R V T editors"]) + ["1–0 A–Z switch", "↑↓ select", "↵ open", "⌘W close"]
             + (profiles > 0 ? ["⌥1–\(min(profiles, 9)) new window (profile)"] : [])
             + ["click app to collapse", "⌘Q quit"]

@@ -333,6 +333,10 @@ final class WindowsController {
             }
             return true
         }
+        if mods.isDisjoint(with: [.control, .option, .command]), event.keyCode == 16 {               // Y: playing YouTube
+            if let tab = state.youTubeTarget { focus(tab) }
+            return true
+        }
         if mods.isDisjoint(with: [.control, .option]), let key = editorKeyCodes[Int(event.keyCode)] {   // R F V T G B
             if key == "F", let full = state.fullScreenTarget { focus(full); return true }
             let editors = state.editorTargets
