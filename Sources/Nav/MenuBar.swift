@@ -32,8 +32,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(item("Windows", windowsKey, later(actions.windows)))
         menu.addItem(item("Dock", config.shortcut(.dock), later(actions.dock)))
         menu.addItem(item("Claude Sessions", config.shortcut(.claude), later(actions.claude)))
-        if case let (a?, b?) = AppUsage.optionTabPair() {
-            menu.addItem(item("Switch \(AppUsage.name(of: a)) ⇄ \(AppUsage.name(of: b))", config.shortcut(.switchTopTwo),
+        let cycle = AppUsage.optionTabCycle()
+        if cycle.count >= 2 {
+            let names = cycle.prefix(4).map(AppUsage.name(of:)).joined(separator: cycle.count == 2 ? " ⇄ " : " → ")
+            menu.addItem(item("Switch \(names)\(cycle.count > 4 ? " → …" : "")", config.shortcut(.switchTopTwo),
                               later(AppUsage.switchTopTwo)))
         }
         menu.addItem(.separator())

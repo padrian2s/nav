@@ -53,22 +53,27 @@ enum AppUsage {
             .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID
     }
 
-    /// ⌥Tab's two apps: the ones picked in Settings, else those on ⌥1 / ⌥2.
-    static func optionTabPair() -> (String?, String?) {
+    /// ⌥Tab's apps in order: the ones picked in Settings; A and B left unpicked are the ⌥1 / ⌥2 apps.
+    static func optionTabCycle() -> [String] {
         let picks = Config.current.optionTabApps
-        func pick(_ i: Int) -> String? { picks.indices.contains(i) && !picks[i].isEmpty ? picks[i] : nil }
-        guard pick(0) == nil || pick(1) == nil else { return (pick(0), pick(1)) }
-        let s = currentSlots()
-        return (pick(0) ?? s[0], pick(1) ?? s[1])
+        let slots = picks.prefix(2).allSatisfy { !$0.isEmpty } && picks.count >= 2 ? [] : currentSlots()
+        var apps: [String] = []
+        for i in 0..<max(2, picks.count) {
+            let pick = i < picks.count ? picks[i] : ""
+            let app = !pick.isEmpty ? pick : (i < 2 && slots.indices.contains(i) ? slots[i] : nil)
+            if let app, !apps.contains(app) { apps.append(app) }
+        }
+        return apps
     }
 
-    /// ⌥Tab: from app A to app B, from anywhere else to app A.
+    /// ⌥Tab: from an app in the list to the next one (the last goes back to the first);
+    /// from anywhere else to the first.
     static func switchTopTwo() {
-        let (a, b) = optionTabPair()
-        guard let first = a ?? b else { return }
-        let second = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == first && b != nil && a != nil
-        let key = Config.current.shortcut(.switchTopTwo)?.label ?? "⌥⇥"
-        open(second ? b! : first, key: key)
+        let apps = optionTabCycle()
+        guard !apps.isEmpty else { return }
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let next = apps.firstIndex { $0 == front }.map { apps[($0 + 1) % apps.count] } ?? apps[0]
+        open(next, key: Config.current.shortcut(.switchTopTwo)?.label ?? "⌥⇥")
     }
 
     /// ⌥1…⌥4: key `n` (0 = ⌥1).

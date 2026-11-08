@@ -162,10 +162,29 @@ final class SettingsModel: ObservableObject {
         then(id)
     }
 
-    /// ⌥Tab's app `i` (0 = A, 1 = B); "" follows ⌥1 / ⌥2.
+    /// ⌥Tab's rows: at least A and B.
+    var optionTabRows: Int { max(2, config.optionTabApps.count) }
+
+    /// ⌥Tab's app `i` (0 = A, 1 = B, …); "" makes A / B follow ⌥1 / ⌥2.
     func setOptionTabApp(_ i: Int, _ bundleID: String) {
-        var apps = Array((config.optionTabApps + ["", ""]).prefix(2))
+        var apps = config.optionTabApps
+        while apps.count <= i { apps.append("") }
         apps[i] = bundleID
+        while apps.last == "" { apps.removeLast() }
+        config.optionTabApps = apps
+    }
+
+    func addOptionTabApp(_ bundleID: String) {
+        guard !bundleID.isEmpty else { return }
+        var apps = config.optionTabApps
+        while apps.count < 2 { apps.append("") }   // A and B keep following ⌥1 / ⌥2
+        config.optionTabApps = apps + [bundleID]
+    }
+
+    func removeOptionTabApp(_ i: Int) {
+        var apps = config.optionTabApps
+        guard apps.indices.contains(i) else { return }
+        apps.remove(at: i)
         while apps.last == "" { apps.removeLast() }
         config.optionTabApps = apps
     }
@@ -617,22 +636,38 @@ struct SettingsView: View {
                 note("Work from any app (and 1…4 in the windows view); an app that isn't running is opened. \"Most used\" keys follow the apps you switch to most.")
             }
             VStack(alignment: .leading, spacing: 8) {
-                header("\(model.config.shortcut(.switchTopTwo)?.label ?? "⌥⇥") SWITCHES BETWEEN")
+                header("\(model.config.shortcut(.switchTopTwo)?.label ?? "⌥⇥") CYCLES THROUGH")
                 card {
                     let choices = model.appChoices
-                    ForEach(0..<2, id: \.self) { i in
+                    let rows = model.optionTabRows
+                    ForEach(0..<rows, id: \.self) { i in
                         if i > 0 { separator }
                         row(vertical: 10) {
-                            Text(i == 0 ? "App A" : "App B").font(.system(size: 13.5))
+                            Text("App \(Character(UnicodeScalar(65 + i)!))").font(.system(size: 13.5))
                         } trailing: {
-                            appMenu(current: model.config.optionTabApps.indices.contains(i) ? model.config.optionTabApps[i] : "",
-                                    empty: "Same as \(AppUsage.keyLabel(i))", choices: choices,
-                                    set: { model.setOptionTabApp(i, $0) },
-                                    other: { model.chooseApp(prompt: "Use for ⌥Tab") { model.setOptionTabApp(i, $0) } })
+                            HStack(spacing: 12) {
+                                if rows > 2 {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.system(size: 15)).foregroundStyle(t.ter)
+                                        .contentShape(Circle())
+                                        .onTapGesture { model.removeOptionTabApp(i) }
+                                        .help("Remove")
+                                }
+                                appMenu(current: model.config.optionTabApps.indices.contains(i) ? model.config.optionTabApps[i] : "",
+                                        empty: i < 2 ? "Same as \(AppUsage.keyLabel(i))" : "None", choices: choices,
+                                        set: { model.setOptionTabApp(i, $0) },
+                                        other: { model.chooseApp(prompt: "Use for ⌥Tab") { model.setOptionTabApp(i, $0) } })
+                            }
                         }
                     }
+                    separator
+                    row(vertical: 10) {
+                        Text("A → B → C … → back to A").font(.system(size: 12)).foregroundStyle(t.sec)
+                    } trailing: {
+                        addAppMenu(choices) { model.addOptionTabApp($0) }
+                    }
                 }
-                note("From anywhere it goes to A; from A it goes to B. An app that isn't running is opened.")
+                note("From an app in the list ⌥Tab goes to the next one, from the last back to A; from any other app it goes to A. An app that isn't running is opened.")
             }
             Text("Click a shortcut, then press the new keys. Esc cancels, ⌫ turns it off, ↺ puts back the default.")
                 .font(.system(size: 12)).foregroundStyle(t.ter).padding(.horizontal, 4)
@@ -885,6 +920,32 @@ struct SettingsView: View {
     private func appMenu(_ i: Int, _ choices: [(id: String, name: String, icon: NSImage)]) -> some View {
         appMenu(current: model.config.appKeys.indices.contains(i) ? model.config.appKeys[i] : "", empty: "Most used",
                 choices: choices, set: { model.setAppKey(i, $0) }, other: { model.chooseApp(for: i) })
+    }
+
+    /// "+ Add app" pill: the same choices as `appMenu`.
+    private func addAppMenu(_ choices: [(id: String, name: String, icon: NSImage)], _ add: @escaping (String) -> Void) -> some View {
+        Menu {
+            ForEach(choices, id: \.id) { app in
+                Button { add(app.id) } label: { Label { Text(app.name) } icon: { Image(nsImage: app.icon) } }
+            }
+            Divider()
+            ForEach(NavFeature.allCases, id: \.self) { feature in
+                Button { add(feature.id) } label: { Label("Nav: \(feature.title)", systemImage: feature.symbol) }
+            }
+            Divider()
+            Button("Other…") { DispatchQueue.main.async { model.chooseApp(prompt: "Add to ⌥Tab", add) } }
+        } label: {
+            Label("Add app", systemImage: "plus")
+                .font(.system(size: 12)).foregroundStyle(t.fg2)
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(Capsule().fill(t.fill))
+                .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .focusEffectDisabled()
+        .fixedSize()
     }
 
     /// A pill menu of apps: `empty` (""), the running apps, Nav's features, Other….

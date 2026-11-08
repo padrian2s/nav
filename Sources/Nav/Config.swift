@@ -24,8 +24,8 @@ struct Config: Codable {
     /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id, or one of Nav's
     /// features ("nav:claude", see `NavFeature`); "" (or a missing entry) leaves that key to the most used app.
     var appKeys: [String] = []
-    /// The two apps ⌥Tab switches between, by bundle id (or a Nav feature); "" (or missing)
-    /// follows ⌥1 / ⌥2.
+    /// The apps ⌥Tab cycles through (A → B → C … → A), by bundle id (or a Nav feature); the
+    /// first two, when "" (or missing), follow ⌥1 / ⌥2.
     var optionTabApps: [String] = []
     /// Remapped global shortcuts by `NavAction` ("dock": "ctrl+opt+d", "" = off); the rest keep their default.
     var shortcuts: [String: String] = [:]
