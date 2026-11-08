@@ -53,12 +53,22 @@ enum AppUsage {
             .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID
     }
 
-    /// ⌥Tab: from app 1 to app 2, from anywhere else to app 1.
-    static func switchTopTwo() {
+    /// ⌥Tab's two apps: the ones picked in Settings, else those on ⌥1 / ⌥2.
+    static func optionTabPair() -> (String?, String?) {
+        let picks = Config.current.optionTabApps
+        func pick(_ i: Int) -> String? { picks.indices.contains(i) && !picks[i].isEmpty ? picks[i] : nil }
+        guard pick(0) == nil || pick(1) == nil else { return (pick(0), pick(1)) }
         let s = currentSlots()
-        guard let first = s[0] else { return }
-        let second = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == first && s[1] != nil
-        open(second ? s[1]! : first, key: keyLabel(second ? 1 : 0))
+        return (pick(0) ?? s[0], pick(1) ?? s[1])
+    }
+
+    /// ⌥Tab: from app A to app B, from anywhere else to app A.
+    static func switchTopTwo() {
+        let (a, b) = optionTabPair()
+        guard let first = a ?? b else { return }
+        let second = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == first && b != nil && a != nil
+        let key = Config.current.shortcut(.switchTopTwo)?.label ?? "⌥⇥"
+        open(second ? b! : first, key: key)
     }
 
     /// ⌥1…⌥4: key `n` (0 = ⌥1).

@@ -135,7 +135,7 @@ final class SettingsModel: ObservableObject {
 
     /// Apps to offer for ⌥1…⌥4: the running ones and those already picked, by name.
     var appChoices: [(id: String, name: String, icon: NSImage)] {
-        var ids = Set(config.appKeys.filter { !$0.isEmpty })
+        var ids = Set((config.appKeys + config.optionTabApps).filter { !$0.isEmpty })
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             if let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier { ids.insert(id) }
         }
@@ -150,12 +150,24 @@ final class SettingsModel: ObservableObject {
 
     /// "Other…": pick any app from /Applications for ⌥(i+1).
     func chooseApp(for i: Int) {
+        chooseApp(prompt: "Use for ⌥\(i + 1)") { [weak self] in self?.setAppKey(i, $0) }
+    }
+
+    func chooseApp(prompt: String, _ then: (String) -> Void) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Use for ⌥\(i + 1)"
+        panel.prompt = prompt
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
-        setAppKey(i, id)
+        then(id)
+    }
+
+    /// ⌥Tab's app `i` (0 = A, 1 = B); "" follows ⌥1 / ⌥2.
+    func setOptionTabApp(_ i: Int, _ bundleID: String) {
+        var apps = Array((config.optionTabApps + ["", ""]).prefix(2))
+        apps[i] = bundleID
+        while apps.last == "" { apps.removeLast() }
+        config.optionTabApps = apps
     }
 
     /// Replays fade in → hold → fade out, like when the popup opens.
@@ -604,6 +616,24 @@ struct SettingsView: View {
                 }
                 note("Work from any app (and 1…4 in the windows view); an app that isn't running is opened. \"Most used\" keys follow the apps you switch to most.")
             }
+            VStack(alignment: .leading, spacing: 8) {
+                header("\(model.config.shortcut(.switchTopTwo)?.label ?? "⌥⇥") SWITCHES BETWEEN")
+                card {
+                    let choices = model.appChoices
+                    ForEach(0..<2, id: \.self) { i in
+                        if i > 0 { separator }
+                        row(vertical: 10) {
+                            Text(i == 0 ? "App A" : "App B").font(.system(size: 13.5))
+                        } trailing: {
+                            appMenu(current: model.config.optionTabApps.indices.contains(i) ? model.config.optionTabApps[i] : "",
+                                    empty: "Same as \(AppUsage.keyLabel(i))", choices: choices,
+                                    set: { model.setOptionTabApp(i, $0) },
+                                    other: { model.chooseApp(prompt: "Use for ⌥Tab") { model.setOptionTabApp(i, $0) } })
+                        }
+                    }
+                }
+                note("From anywhere it goes to A; from A it goes to B. An app that isn't running is opened.")
+            }
             Text("Click a shortcut, then press the new keys. Esc cancels, ⌫ turns it off, ↺ puts back the default.")
                 .font(.system(size: 12)).foregroundStyle(t.ter).padding(.horizontal, 4)
         }
@@ -853,22 +883,28 @@ struct SettingsView: View {
 
     /// The app (or Nav feature) on ⌥(i+1), as a pill that opens a menu.
     private func appMenu(_ i: Int, _ choices: [(id: String, name: String, icon: NSImage)]) -> some View {
-        let current = model.config.appKeys.indices.contains(i) ? model.config.appKeys[i] : ""
-        return Menu {
-            Button("Most used") { model.setAppKey(i, "") }
+        appMenu(current: model.config.appKeys.indices.contains(i) ? model.config.appKeys[i] : "", empty: "Most used",
+                choices: choices, set: { model.setAppKey(i, $0) }, other: { model.chooseApp(for: i) })
+    }
+
+    /// A pill menu of apps: `empty` (""), the running apps, Nav's features, Other….
+    private func appMenu(current: String, empty: String, choices: [(id: String, name: String, icon: NSImage)],
+                         set: @escaping (String) -> Void, other: @escaping () -> Void) -> some View {
+        Menu {
+            Button(empty) { set("") }
             Divider()
             ForEach(choices, id: \.id) { app in
-                Button { model.setAppKey(i, app.id) } label: { Label { Text(app.name) } icon: { Image(nsImage: app.icon) } }
+                Button { set(app.id) } label: { Label { Text(app.name) } icon: { Image(nsImage: app.icon) } }
             }
             Divider()
             ForEach(NavFeature.allCases, id: \.self) { feature in
-                Button { model.setAppKey(i, feature.id) } label: { Label("Nav: \(feature.title)", systemImage: feature.symbol) }
+                Button { set(feature.id) } label: { Label("Nav: \(feature.title)", systemImage: feature.symbol) }
             }
             Divider()
-            Button("Other…") { DispatchQueue.main.async { model.chooseApp(for: i) } }
+            Button("Other…") { DispatchQueue.main.async(execute: other) }
         } label: {
             HStack(spacing: 8) {
-                Text(current.isEmpty ? "Most used" : (NavFeature(id: current).map { "Nav: \($0.title)" } ?? AppUsage.name(of: current)))
+                Text(current.isEmpty ? empty : (NavFeature(id: current).map { "Nav: \($0.title)" } ?? AppUsage.name(of: current)))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(t.sec)

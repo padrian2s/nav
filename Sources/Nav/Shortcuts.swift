@@ -92,7 +92,7 @@ enum NavAction: String, CaseIterable {
         case .dock: "Dock"
         case .windows: "Windows view"
         case .claude: "Claude Sessions"
-        case .switchTopTwo: "Switch between keys 1 and 2"
+        case .switchTopTwo: "Switch between two apps"
         case .key1, .key2, .key3, .key4: "App key \(appIndex! + 1)"
         }
     }

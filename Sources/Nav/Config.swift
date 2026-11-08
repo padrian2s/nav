@@ -24,6 +24,9 @@ struct Config: Codable {
     /// The app on each of ⌥1…⌥4 (and 1…4 in the windows view), by bundle id, or one of Nav's
     /// features ("nav:claude", see `NavFeature`); "" (or a missing entry) leaves that key to the most used app.
     var appKeys: [String] = []
+    /// The two apps ⌥Tab switches between, by bundle id (or a Nav feature); "" (or missing)
+    /// follows ⌥1 / ⌥2.
+    var optionTabApps: [String] = []
     /// Remapped global shortcuts by `NavAction` ("dock": "ctrl+opt+d", "" = off); the rest keep their default.
     var shortcuts: [String: String] = [:]
     /// Text editors: their windows get R, F, V (then T, G, B) in the windows view.
@@ -160,6 +163,7 @@ struct Config: Codable {
         appStrip = try c.decodeIfPresent(AppStripConfig.self, forKey: .appStrip) ?? AppStripConfig()
         appKeys = try c.decodeIfPresent([String].self, forKey: .appKeys) ?? []
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? [:]
+        optionTabApps = try c.decodeIfPresent([String].self, forKey: .optionTabApps) ?? []
         editorApps = try c.decodeIfPresent([String].self, forKey: .editorApps) ?? Config().editorApps
         pinnedApps = try c.decodeIfPresent([String].self, forKey: .pinnedApps) ?? Config().pinnedApps
         passShortcutsToRemoteApps = try c.decodeIfPresent(Bool.self, forKey: .passShortcutsToRemoteApps) ?? true
