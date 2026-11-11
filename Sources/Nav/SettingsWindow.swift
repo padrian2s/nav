@@ -516,6 +516,13 @@ struct SettingsView: View {
                     slider("Icon size", $model.config.appStrip.iconSize, 20...72, step: 2, unit: "pt")
                     separator
                     row { Text("Names under the icons").font(.system(size: 13.5)) } trailing: { toggle($model.config.appStrip.names) }
+                    separator
+                    row { described("Magnify on hover", "Icons grow under the mouse, like the Dock.") }
+                        trailing: { toggle($model.config.appStrip.magnify) }
+                    if strip.magnify {
+                        separator
+                        slider("Hover size", $model.config.appStrip.hoverSize, 32...128, step: 4, unit: "pt")
+                    }
                 }
                 .opacity(strip.enabled ? 1 : 0.4)
                 .allowsHitTesting(strip.enabled)

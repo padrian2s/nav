@@ -65,7 +65,9 @@ final class AppStripState: ObservableObject {
     }
 }
 
+/// The mouse over the strip, in unmagnified coordinates along it.
 final class AppStripHover: ObservableObject {
+    @Published var along: CGFloat?
     @Published var id: String?
 }
 
@@ -85,10 +87,11 @@ struct WithAppStrip<Content: View>: View {
         if strip.isShown {
             let bar = AppStripView(strip: strip, hover: strip.hover, modern: modern)
             switch strip.config.placement {
-            case .top: VStack(spacing: 0) { bar; line(vertical: false); content }
-            case .bottom: VStack(spacing: 0) { content; line(vertical: false); bar }
-            case .left: HStack(spacing: 0) { bar; line(vertical: true); content }
-            case .right: HStack(spacing: 0) { content; line(vertical: true); bar }
+            // The bar draws last-on-top, so magnified icons grow over the content.
+            case .top: VStack(spacing: 0) { bar.zIndex(1); line(vertical: false); content }
+            case .bottom: VStack(spacing: 0) { content; line(vertical: false); bar.zIndex(1) }
+            case .left: HStack(spacing: 0) { bar.zIndex(1); line(vertical: true); content }
+            case .right: HStack(spacing: 0) { content; line(vertical: true); bar.zIndex(1) }
             }
         } else {
             content
@@ -107,37 +110,121 @@ struct AppStripView: View {
     @ObservedObject var hover: AppStripHover
     let modern: Bool
 
+    private var vertical: Bool { strip.config.placement.isVertical }
+    /// One tile along the strip, unmagnified.
+    private var step: CGFloat { vertical ? strip.tileHeight : strip.tileWidth }
+
     var body: some View {
-        let vertical = strip.config.placement.isVertical
-        ScrollView(vertical ? .vertical : .horizontal, showsIndicators: false) {
-            if vertical {
-                VStack(spacing: strip.spacing) { tiles }.padding(strip.padding)
-                    .frame(maxWidth: .infinity)
+        GeometryReader { geo in
+            let room = vertical ? geo.size.height : geo.size.width
+            // Everything fits: Dock-style magnification. Too many: a plain scrolling row.
+            if strip.length <= room + 0.5 {
+                magnified(room)
             } else {
-                HStack(spacing: strip.spacing) { tiles }.padding(strip.padding)
-                    .frame(maxHeight: .infinity)
+                scrolling
             }
         }
-        // Centered when everything fits.
-        .defaultScrollAnchor(.center)
         .frame(width: vertical ? strip.thickness : nil, height: vertical ? nil : strip.thickness)
     }
 
-    private var tiles: some View {
-        ForEach(strip.items) { item in tile(item) }
+    // MARK: Magnification (the math of `DockState.scale`)
+
+    private var maxScale: CGFloat {
+        strip.config.magnify ? max(CGFloat(strip.config.hoverSize) / strip.iconSize, 1) : 1
+    }
+
+    private func baseCenter(_ i: Int) -> CGFloat {
+        strip.padding + CGFloat(i) * (step + strip.spacing) + step / 2
+    }
+
+    private func scale(_ i: Int) -> CGFloat {
+        guard maxScale > 1, let along = hover.along else { return 1 }
+        let reach = strip.iconSize * 3
+        let d = abs(along - baseCenter(i))
+        guard d < reach else { return 1 }
+        return 1 + (maxScale - 1) * cos(.pi * d / reach / 2)   // full size at the mouse, none at reach
+    }
+
+    /// How much the grown icons before `x` push it along (each icon grows around its center).
+    private func pushed(before x: CGFloat) -> CGFloat {
+        (0..<strip.items.count).reduce(0) { sum, i in
+            let extra = strip.iconSize * (scale(i) - 1)
+            let start = baseCenter(i) - step / 2
+            return sum + extra * min(max((x - start) / step, 0), 1)
+        }
+    }
+
+    /// Where tile `i`'s center goes: the icon under the mouse stays put, the others make room.
+    private func center(_ i: Int, offset: CGFloat) -> CGFloat {
+        guard let along = hover.along else { return baseCenter(i) + offset }
+        return baseCenter(i) + pushed(before: baseCenter(i)) - pushed(before: along) + offset
+    }
+
+    /// Icons grow toward the windows (up from a bottom strip, right from a left one, …).
+    private var anchor: UnitPoint {
+        switch strip.config.placement {
+        case .top: .top
+        case .bottom: .bottom
+        case .left: .leading
+        case .right: .trailing
+        }
+    }
+
+    private func magnified(_ room: CGFloat) -> some View {
+        let offset = (room - strip.length) / 2   // centered
+        return ZStack(alignment: .topLeading) {
+            ForEach(Array(strip.items.enumerated()), id: \.element.id) { i, item in
+                let c = center(i, offset: offset)
+                tile(item, scale: scale(i))
+                    .zIndex(Double(scale(i)))
+                    .position(x: vertical ? strip.thickness / 2 : c, y: vertical ? c : strip.thickness / 2)
+            }
+        }
+        .frame(width: vertical ? strip.thickness : room, height: vertical ? room : strip.thickness)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let p):
+                let along = (vertical ? p.y : p.x) - offset
+                let i = Int((along - strip.padding + strip.spacing / 2) / (step + strip.spacing))
+                hover.id = strip.items.indices.contains(i) ? strip.items[i].id : nil
+                withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.85)) { hover.along = along }
+            case .ended:
+                hover.id = nil
+                withAnimation(.spring(response: 0.3)) { hover.along = nil }
+            }
+        }
+    }
+
+    private var scrolling: some View {
+        ScrollView(vertical ? .vertical : .horizontal, showsIndicators: false) {
+            if vertical {
+                VStack(spacing: strip.spacing) { plainTiles }.padding(strip.padding).frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: strip.spacing) { plainTiles }.padding(strip.padding).frame(maxHeight: .infinity)
+            }
+        }
+    }
+
+    private var plainTiles: some View {
+        ForEach(strip.items) { item in
+            tile(item, scale: hover.id == item.id ? 1.1 : 1)
+                .onHover { inside in
+                    if inside { hover.id = item.id } else if hover.id == item.id { hover.id = nil }
+                }
+        }
     }
 
     private var ink: Color { modern ? Palette.text : .primary }
 
-    private func tile(_ item: DockItem) -> some View {
-        let on = hover.id == item.id
+    private func tile(_ item: DockItem, scale: CGFloat) -> some View {
         let size = strip.iconSize
         return VStack(spacing: 2) {
             Image(nsImage: item.icon)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: size, height: size)
-                .scaleEffect(on ? 1.1 : 1)
+                .scaleEffect(scale, anchor: anchor)
             Circle()
                 .fill(ink.opacity(item.isRunning ? 0.65 : 0))
                 .frame(width: 4, height: 4)
@@ -151,14 +238,7 @@ struct AppStripView: View {
             }
         }
         .frame(width: strip.tileWidth, height: strip.tileHeight)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(ink.opacity(on ? 0.08 : 0))
-            .padding(-4))
         .contentShape(Rectangle())
-        .animation(.easeOut(duration: 0.12), value: on)
-        .onHover { inside in
-            if inside { hover.id = item.id } else if hover.id == item.id { hover.id = nil }
-        }
         .onTapGesture { strip.onOpen(item) }
         .help(item.name)
     }

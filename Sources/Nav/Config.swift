@@ -74,6 +74,10 @@ struct Config: Codable {
         var iconSize: Double = 40
         /// App names under the icons.
         var names = false
+        /// Icons grow under the mouse, like the Dock's magnification.
+        var magnify = true
+        /// Size of the icon under the mouse, in points.
+        var hoverSize: Double = 72
         /// Tiles left out, by `DockItem.id` (the app's or folder's path, "trash").
         var hidden: [String] = []
         /// Apps added after the dock's, by path.
@@ -89,6 +93,8 @@ struct Config: Codable {
             position = try c.decodeIfPresent(String.self, forKey: .position) ?? "bottom"
             iconSize = try c.decodeIfPresent(Double.self, forKey: .iconSize) ?? 40
             names = try c.decodeIfPresent(Bool.self, forKey: .names) ?? false
+            magnify = try c.decodeIfPresent(Bool.self, forKey: .magnify) ?? true
+            hoverSize = try c.decodeIfPresent(Double.self, forKey: .hoverSize) ?? 72
             hidden = try c.decodeIfPresent([String].self, forKey: .hidden) ?? []
             extra = try c.decodeIfPresent([String].self, forKey: .extra) ?? []
         }
