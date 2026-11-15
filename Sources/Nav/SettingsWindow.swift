@@ -575,6 +575,16 @@ struct SettingsView: View {
                  ? "Opens where the mouse is."
                  : "Stuck to the \(model.config.dockPosition) edge of the screen the mouse is on.")
                 .font(.system(size: 12)).foregroundStyle(t.sec).padding(.horizontal, 4)
+            card {
+                row(vertical: 12) { described("Magnify on hover", "Icons grow under the mouse, like the Dock.") } trailing: {
+                    segmented($model.config.dockMagnify, [("On", "on"), ("Off", "off"), ("Like macOS", "system")])
+                }
+                if model.config.dockMagnify == "on" {
+                    separator
+                    slider("Hover size", $model.config.dockHoverSize, 32...256, step: 4, unit: "pt")
+                }
+            }
+            .padding(.top, 8)
         }
     }
 

@@ -38,9 +38,16 @@ struct DockMetrics {
         let tile = CGFloat(prefs?.double(forKey: "tilesize") ?? 0)
         let large = CGFloat(prefs?.double(forKey: "largesize") ?? 0)
         let tileSize = tile > 0 ? tile : 64
-        return DockMetrics(tileSize: tileSize,
-                           largeSize: max(large > 0 ? large : 128, tileSize),
-                           magnify: prefs?.bool(forKey: "magnification") ?? false)
+        let config = Config.current
+        switch config.dockMagnify {
+        case "off":
+            return DockMetrics(tileSize: tileSize, largeSize: tileSize, magnify: false)
+        case "system":   // the macOS Dock's own Magnification setting
+            return DockMetrics(tileSize: tileSize, largeSize: max(large > 0 ? large : 128, tileSize),
+                               magnify: prefs?.bool(forKey: "magnification") ?? false)
+        default:
+            return DockMetrics(tileSize: tileSize, largeSize: max(CGFloat(config.dockHoverSize), tileSize), magnify: true)
+        }
     }
 
     var maxScale: CGFloat { magnify ? largeSize / tileSize : 1 }

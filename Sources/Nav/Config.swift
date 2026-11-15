@@ -15,6 +15,10 @@ struct Config: Codable {
     var hideDock = false
     /// Where ⌘E opens the dock: "free" (at the mouse) or stuck to the screen's "left", "bottom" or "right" edge.
     var dockPosition = "free"
+    /// ⌘E icons grow under the mouse: "on", "off", or "system" (like the macOS Dock's Magnification).
+    var dockMagnify = "on"
+    /// With "on": size of the icon under the mouse, in points.
+    var dockHoverSize: Double = 128
     /// Where closed Chrome profiles are shown next to Chrome's tabs: "left", "right" or "off".
     var chromeProfiles = "right"
     /// ⌘Tab / ⌘⇧Tab open the windows view, and ⌘⇧E shows the macOS app switcher instead.
@@ -164,6 +168,8 @@ struct Config: Codable {
         // Older configs: adopt whatever the Dock is set to now.
         hideDock = try c.decodeIfPresent(Bool.self, forKey: .hideDock) ?? MacDock.isHidden
         dockPosition = try c.decodeIfPresent(String.self, forKey: .dockPosition) ?? "free"
+        dockMagnify = try c.decodeIfPresent(String.self, forKey: .dockMagnify) ?? "on"
+        dockHoverSize = try c.decodeIfPresent(Double.self, forKey: .dockHoverSize) ?? 128
         chromeProfiles = try c.decodeIfPresent(String.self, forKey: .chromeProfiles) ?? "right"
         commandTab = try c.decodeIfPresent(Bool.self, forKey: .commandTab) ?? true
         appStrip = try c.decodeIfPresent(AppStripConfig.self, forKey: .appStrip) ?? AppStripConfig()
