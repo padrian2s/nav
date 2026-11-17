@@ -47,13 +47,27 @@ enum WindowsModel {
         let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
 
         let me = ProcessInfo.processInfo.processIdentifier
+        let visibleSpaces = Spaces.visible()
+        var minimized: [pid_t: Set<CGWindowID>] = [:]
         let windows = content.windows.filter { w in
             guard w.windowLayer == 0, w.frame.width >= 100, w.frame.height >= 60,
                   let app = w.owningApplication, app.processID != me,
-                  NSRunningApplication(processIdentifier: app.processID)?.activationPolicy == .regular
+                  let running = NSRunningApplication(processIdentifier: app.processID),
+                  running.activationPolicy == .regular
             else { return false }
+            if w.isOnScreen { return true }
             // Off-screen untitled windows are usually helpers, not real windows.
-            return w.isOnScreen || !(w.title ?? "").isEmpty
+            if (w.title ?? "").isEmpty { return false }
+            // Off screen for a reason: its app is hidden (⌘H) or it's on a Space that isn't showing.
+            if running.isHidden { return true }
+            let spaces = Spaces.of(w.windowID)
+            if !spaces.isEmpty, spaces.isDisjoint(with: visibleSpaces) { return true }
+            // Otherwise only if minimized. Apps like Screen Sharing keep closed windows around, ordered
+            // out: on no Space, or on the visible one yet not on screen, and missing from Accessibility.
+            guard AXIsProcessTrusted() else { return true }
+            let pid = app.processID
+            if minimized[pid] == nil { minimized[pid] = minimizedWindows(pid: pid) }
+            return minimized[pid]!.contains(w.windowID)
         }
         .sorted { (rank[$0.windowID] ?? .max) < (rank[$1.windowID] ?? .max) }
 
@@ -209,6 +223,21 @@ enum WindowsModel {
         }
     }
 
+    /// The app's minimized windows, from Accessibility.
+    private static func minimizedWindows(pid: pid_t) -> Set<CGWindowID> {
+        var value: CFTypeRef?
+        AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &value)
+        var ids: Set<CGWindowID> = []
+        for ax in (value as? [AXUIElement]) ?? [] {
+            var flag: CFTypeRef?
+            var id: CGWindowID = 0
+            guard AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &flag) == .success,
+                  (flag as? Bool) == true, _AXUIElementGetWindow(ax, &id) == .success else { continue }
+            ids.insert(id)
+        }
+        return ids
+    }
+
     /// Asks once per launch for Accessibility (needed to raise a specific window).
     static func requestAccessibilityIfNeeded(force: Bool = false) {
         guard !AXIsProcessTrusted(), force || !askedForAccessibility else { return }
@@ -229,13 +258,26 @@ enum Spaces {
     private static let connection = CGSMainConnectionID()
 
     static func isFullScreen(_ window: CGWindowID) -> Bool {
+        of(window).contains { CGSSpaceGetType(connection, $0) == 4 }   // 4 = full-screen Space
+    }
+
+    /// The Spaces a window is on: none for a window the app ordered out long ago.
+    static func of(_ window: CGWindowID) -> Set<UInt64> {
         let ids = [NSNumber(value: window)] as CFArray
-        guard let spaces = CGSCopySpacesForWindows(connection, 0x7, ids)?.takeRetainedValue() as? [NSNumber] else {
-            return false
-        }
-        return spaces.contains { CGSSpaceGetType(connection, $0.uint64Value) == 4 }   // 4 = full-screen Space
+        let spaces = CGSCopySpacesForWindows(connection, 0x7, ids)?.takeRetainedValue() as? [NSNumber] ?? []
+        return Set(spaces.map(\.uint64Value))
+    }
+
+    /// The Space showing on each display.
+    static func visible() -> Set<UInt64> {
+        let displays = CGSCopyManagedDisplaySpaces(connection)?.takeRetainedValue() as? [[String: Any]] ?? []
+        return Set(displays.compactMap { ($0["Current Space"] as? [String: Any])?["id64"] as? NSNumber }
+            .map(\.uint64Value))
     }
 }
+
+@_silgen_name("CGSCopyManagedDisplaySpaces")
+private func CGSCopyManagedDisplaySpaces(_ cid: Int32) -> Unmanaged<CFArray>?
 
 @_silgen_name("CGSMainConnectionID")
 private func CGSMainConnectionID() -> Int32
