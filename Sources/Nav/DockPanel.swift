@@ -5,6 +5,8 @@ import SwiftUI
 /// without activating Nav, so focus returns to the previous app on dismiss.
 final class DockPanel: NSPanel {
     var onKey: (NSEvent) -> Bool = { _ in false }
+    /// Whether the panel is on screen, for `Presented` content to stop animating when it isn't.
+    let presence = WindowPresence()
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
@@ -16,6 +18,7 @@ final class DockPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isMovable = false
+        presence.watch(self)
     }
 
     override var canBecomeKey: Bool { true }

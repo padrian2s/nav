@@ -52,6 +52,8 @@ final class WindowsState: ObservableObject {
     @Published var needsPermission = false
     @Published var border = Config.BorderConfig()
     @Published var borderOpacity: Double = 0
+    /// False once the border has faded out, so it stops redrawing behind opacity 0.
+    @Published var borderLive = false
     @Published var hovered: String?          // SwitchTarget.id
     @Published var selected: String?
     /// Modern theme (see `ModernWindowsView`); set from the config on every show.
@@ -331,7 +333,7 @@ struct WindowsView: View {
         }
         .overlay {
             if state.border.enabled {
-                PopupBorder(config: state.border)
+                PopupBorder(config: state.border, live: state.borderLive)
                     .opacity(state.borderOpacity)
                     .allowsHitTesting(false)
             }
@@ -577,20 +579,38 @@ struct WindowsView: View {
 /// The configurable line around the popup: solid, or a (rotating) palette gradient.
 struct PopupBorder: View {
     let config: Config.BorderConfig
+    /// False once it has faded out, so it stops turning behind opacity 0.
+    var live = true
+    @Environment(\.isShowing) private var showing
 
     var body: some View {
         let colors = config.colors.map { Color(nsColor: $0) }
-        let shape = RoundedRectangle(cornerRadius: CGFloat(config.cornerRadius + config.outset), style: .continuous)
-            .inset(by: -CGFloat(config.outset) - CGFloat(config.width) / 2)
-        TimelineView(.animation(paused: !config.animate || colors.count < 2)) { context in
-            let angle = Angle.degrees(config.animate ? context.date.timeIntervalSinceReferenceDate * 60 : 0)
-            let style: AnyShapeStyle = colors.count > 1
-                ? AnyShapeStyle(AngularGradient(colors: colors + [colors[0]], center: .center, angle: angle))
-                : AnyShapeStyle(colors.first ?? .accentColor)
-            shape
-                .strokeBorder(style, lineWidth: CGFloat(config.width))
-                .shadow(color: (colors.first ?? .accentColor).opacity(config.glow > 0 ? 0.9 : 0),
-                        radius: CGFloat(config.glow) / 2)
+        let first = colors.first ?? .accentColor
+        let width = CGFloat(config.width)
+        // How far the line reaches outside the popup.
+        let reach = CGFloat(config.outset) + width / 2
+        let line = RoundedRectangle(cornerRadius: CGFloat(config.cornerRadius + config.outset), style: .continuous)
+            .inset(by: -reach)
+            .strokeBorder(first, lineWidth: width)
+        ZStack {
+            // The line and its glow are drawn once.
+            line.shadow(color: first.opacity(config.glow > 0 ? 0.9 : 0), radius: CGFloat(config.glow) / 2)
+            if colors.count > 1 {
+                // So is the gradient: a disc covering the line, seen through it. Turning the disc moves
+                // a layer; a gradient stroke would be redrawn on the CPU every frame (a quarter of a core).
+                GeometryReader { geo in
+                    let side = hypot(geo.size.width + reach * 2, geo.size.height + reach * 2)
+                    // 30 frames a second: plenty for one turn in 6 s, and SwiftUI updates that much less.
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !live || !showing || !config.animate)) { context in
+                        let seconds = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6)
+                        AngularGradient(colors: colors + [colors[0]], center: .center)
+                            .frame(width: side, height: side)
+                            .rotationEffect(.degrees(config.animate ? seconds * 60 : 0))
+                            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    }
+                }
+                .mask(line)
+            }
         }
     }
 }
@@ -640,9 +660,10 @@ struct AutomationBadge: View {
 struct ClaudeStatusIcon: View {
     let state: ClaudeState
     let size: CGFloat
+    @Environment(\.isShowing) private var showing
 
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(paused: !showing)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             switch state {
             case .working:

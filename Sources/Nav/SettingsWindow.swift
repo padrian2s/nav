@@ -212,6 +212,7 @@ final class SettingsWindowController {
 
     private var window: NSWindow?
     private let model = SettingsModel()
+    private let presence = WindowPresence()
 
     func show(pane: SettingsPane? = nil) {
         model.config = Config.current   // pick up hand edits to the file
@@ -232,9 +233,10 @@ final class SettingsWindowController {
             w.toolbar = NSToolbar()
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
-            let host = NSHostingView(rootView: SettingsView(model: model))
+            let host = NSHostingView(rootView: Presented(presence) { SettingsView(model: model) })
             host.sizingOptions = []
             w.contentView = host
+            presence.watch(w)
             w.setContentSize(NSSize(width: 800, height: 600))
             w.center()
             // Closing mid-recording would leave Nav's shortcuts paused.

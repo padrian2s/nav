@@ -34,6 +34,7 @@ final class ClaudeBoardState: ObservableObject {
     @Published var selected: String?
     @Published var border = Config.BorderConfig()
     @Published var borderOpacity: Double = 0
+    @Published var borderLive = false
     var onFocus: (ClaudeSession) -> Void = { _ in }
 
     /// Your turn first (they need you), then agents in the background, then working.
@@ -113,7 +114,7 @@ struct ClaudeBoardView: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
             if state.border.enabled {
-                PopupBorder(config: state.border).opacity(state.borderOpacity).allowsHitTesting(false)
+                PopupBorder(config: state.border, live: state.borderLive).opacity(state.borderOpacity).allowsHitTesting(false)
             }
         }
         .environment(\.colorScheme, .light)
@@ -265,7 +266,7 @@ final class ClaudeBoardController {
     var isVisible: Bool { panel.isVisible }
 
     init() {
-        panel.contentView = NSHostingView(rootView: ClaudeBoardView(state: state))
+        panel.contentView = NSHostingView(rootView: Presented(panel.presence) { ClaudeBoardView(state: state) })
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         state.onFocus = { [weak self] session in self?.focus(session) }
     }
@@ -319,12 +320,15 @@ final class ClaudeBoardController {
         borderGeneration += 1
         let gen = borderGeneration
         state.borderOpacity = 0
+        state.borderLive = cfg.enabled
         guard cfg.enabled else { return }
         withAnimation(.easeOut(duration: cfg.fadeIn)) { state.borderOpacity = cfg.opacity }
         guard cfg.fade else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + cfg.fadeIn + cfg.duration) { [weak self] in
             guard let self, gen == self.borderGeneration else { return }
-            withAnimation(.easeInOut(duration: cfg.fadeOut)) { self.state.borderOpacity = 0 }
+            withAnimation(.easeInOut(duration: cfg.fadeOut)) { self.state.borderOpacity = 0 } completion: {
+                if gen == self.borderGeneration { self.state.borderLive = false }
+            }
         }
     }
 

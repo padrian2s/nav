@@ -10,7 +10,7 @@ final class WindowsController {
     var isVisible: Bool { panel.isVisible }
 
     init() {
-        let host = MenuHostingView(rootView: SwitcherView(state: state))
+        let host = MenuHostingView(rootView: Presented(panel.presence) { SwitcherView(state: state) })
         host.menuForEvent = { [weak self] _ in
             guard let self else { return nil }
             // The ⌘E apps strip: the same menu as in ⌘E.
@@ -169,12 +169,15 @@ final class WindowsController {
         borderGeneration += 1
         let gen = borderGeneration
         state.borderOpacity = 0
+        state.borderLive = cfg.enabled
         guard cfg.enabled else { return }
         withAnimation(.easeOut(duration: cfg.fadeIn)) { state.borderOpacity = cfg.opacity }
         guard cfg.fade else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + cfg.fadeIn + cfg.duration) { [weak self] in
             guard let self, gen == self.borderGeneration else { return }
-            withAnimation(.easeInOut(duration: cfg.fadeOut)) { self.state.borderOpacity = 0 }
+            withAnimation(.easeInOut(duration: cfg.fadeOut)) { self.state.borderOpacity = 0 } completion: {
+                if gen == self.borderGeneration { self.state.borderLive = false }
+            }
         }
     }
 

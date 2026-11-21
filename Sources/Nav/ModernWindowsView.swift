@@ -36,6 +36,12 @@ struct ModernMetrics {
     let listMaxWidth: CGFloat = 460
     let listGap: CGFloat = 10
     let profilesWidth: CGFloat = 72
+    let profileSize: CGFloat = 28
+    let profileNameHeight: CGFloat = 11
+    let profileNameGap: CGFloat = 2
+    let profilesSpacing: CGFloat = 6
+    let profilesLabelHeight: CGFloat = 13
+    let profilesShown = 9
     let collapsedHeight: CGFloat = 92
     // Hover preview
     let peekWidth: CGFloat = 280
@@ -50,7 +56,16 @@ struct ModernMetrics {
     func groupHeight(_ g: AppWindows, collapsed: Bool) -> CGFloat {
         if collapsed { return collapsedHeight }
         let rows = lists(g).map(\.count).max() ?? 1
-        return max(CGFloat(rows) * listRowHeight + listPadding * 2, headerHeight)
+        // The profiles column can be the tallest thing in the row (three profiles next to two tabs).
+        return max(CGFloat(rows) * listRowHeight + listPadding * 2, headerHeight, profilesHeight(g))
+    }
+
+    /// The "+ window" column: its label, then an avatar and a small name per closed Chrome profile.
+    func profilesHeight(_ g: AppWindows) -> CGFloat {
+        guard !g.chromeProfiles.isEmpty else { return 0 }
+        let n = CGFloat(min(g.chromeProfiles.count, profilesShown))
+        return profilesSpacing * 2 + profilesLabelHeight
+            + n * (profilesSpacing + profileSize + profileNameGap + profileNameHeight)
     }
 
     func groupWidth(_ g: AppWindows) -> CGFloat {
@@ -150,7 +165,7 @@ struct ModernWindowsView: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay {
             if state.border.enabled {
-                PopupBorder(config: state.border)
+                PopupBorder(config: state.border, live: state.borderLive)
                     .opacity(state.borderOpacity)
                     .allowsHitTesting(false)
             }
@@ -377,30 +392,41 @@ struct ModernWindowsView: View {
 
     /// Closed Chrome profiles: click (or ⌥1…) opens a new window with that profile.
     private func profiles(_ g: AppWindows) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: m.profilesSpacing) {
             Text("+ window")
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
-            ForEach(Array(g.chromeProfiles.prefix(9).enumerated()), id: \.element.id) { i, profile in
+                .frame(height: m.profilesLabelHeight)
+            ForEach(Array(g.chromeProfiles.prefix(m.profilesShown).enumerated()), id: \.element.id) { i, profile in
                 Button { state.onOpenProfile(profile) } label: {
-                    ProfileAvatar(profile: profile, size: 28)
-                        .overlay(alignment: .bottomTrailing) {
-                            Text("\(i + 1)")
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Palette.secondary)
-                                .padding(.horizontal, 3)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(.white))
-                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Palette.chipBorder))
-                                .offset(x: 6, y: 3)
-                        }
+                    VStack(spacing: m.profileNameGap) {
+                        ProfileAvatar(profile: profile, size: m.profileSize)
+                            .overlay(alignment: .bottomTrailing) {
+                                Text("\(i + 1)")
+                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Palette.secondary)
+                                    .padding(.horizontal, 3)
+                                    .background(RoundedRectangle(cornerRadius: 4).fill(.white))
+                                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Palette.chipBorder))
+                                    .offset(x: 6, y: 3)
+                            }
+                        // The short name that tells the profiles apart (two can both be "Adrian").
+                        Text(profile.label)
+                            .font(.system(size: 9))
+                            .foregroundStyle(Palette.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(width: m.profilesWidth - m.profilesSpacing, height: m.profileNameHeight)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help("New Chrome window as \(profile.tooltip) (⌥\(i + 1))")
             }
         }
-        .padding(6)
+        .padding(m.profilesSpacing)
         .frame(width: m.profilesWidth)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.list))
     }
