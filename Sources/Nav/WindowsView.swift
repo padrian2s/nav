@@ -584,34 +584,107 @@ struct PopupBorder: View {
     @Environment(\.isShowing) private var showing
 
     var body: some View {
-        let colors = config.colors.map { Color(nsColor: $0) }
-        let first = colors.first ?? .accentColor
+        let first = config.colors.first.map { Color(nsColor: $0) } ?? .accentColor
         let width = CGFloat(config.width)
         // How far the line reaches outside the popup.
         let reach = CGFloat(config.outset) + width / 2
-        let line = RoundedRectangle(cornerRadius: CGFloat(config.cornerRadius + config.outset), style: .continuous)
-            .inset(by: -reach)
-            .strokeBorder(first, lineWidth: width)
+        let shape = RoundedRectangle(cornerRadius: CGFloat(config.cornerRadius + config.outset), style: .continuous)
         ZStack {
             // The line and its glow are drawn once.
-            line.shadow(color: first.opacity(config.glow > 0 ? 0.9 : 0), radius: CGFloat(config.glow) / 2)
-            if colors.count > 1 {
-                // So is the gradient: a disc covering the line, seen through it. Turning the disc moves
-                // a layer; a gradient stroke would be redrawn on the CPU every frame (a quarter of a core).
+            shape.inset(by: -reach)
+                .strokeBorder(first, lineWidth: width)
+                .shadow(color: first.opacity(config.glow > 0 ? 0.9 : 0), radius: CGFloat(config.glow) / 2)
+            if config.colors.count > 1 {
                 GeometryReader { geo in
-                    let side = hypot(geo.size.width + reach * 2, geo.size.height + reach * 2)
-                    // 30 frames a second: plenty for one turn in 6 s, and SwiftUI updates that much less.
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !live || !showing || !config.animate)) { context in
-                        let seconds = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6)
-                        AngularGradient(colors: colors + [colors[0]], center: .center)
-                            .frame(width: side, height: side)
-                            .rotationEffect(.degrees(config.animate ? seconds * 60 : 0))
-                            .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                    }
+                    // The same line, as a path to stroke around its middle, in the gradient view's frame.
+                    let middle = shape.inset(by: width / 2 - reach)
+                        .path(in: CGRect(x: reach, y: reach, width: geo.size.width, height: geo.size.height))
+                    SpinningGradient(colors: config.colors, line: middle.cgPath, lineWidth: width,
+                                     spinning: live && showing && config.animate)
+                        .padding(-reach)   // the line is outside the popup
                 }
-                .mask(line)
             }
         }
+    }
+}
+
+/// The palette gradient seen through the border line, turning once every 6 seconds. Core Animation
+/// layers: the window server turns the gradient, so it costs Nav nothing (a SwiftUI animation
+/// redrew it, or at least updated the whole window, every frame).
+struct SpinningGradient: NSViewRepresentable {
+    let colors: [NSColor]
+    let line: CGPath
+    let lineWidth: CGFloat
+    let spinning: Bool
+
+    func makeNSView(context: Context) -> SpinningGradientView { SpinningGradientView() }
+
+    func updateNSView(_ view: SpinningGradientView, context: Context) {
+        view.update(colors: colors, line: line, lineWidth: lineWidth, spinning: spinning)
+    }
+}
+
+final class SpinningGradientView: NSView {
+    private let gradient = CAGradientLayer()
+    private let mask = CAShapeLayer()
+    private var spinning = false
+
+    init() {
+        super.init(frame: .zero)
+        layer = CALayer()
+        wantsLayer = true
+        gradient.type = .conic
+        gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradient.endPoint = CGPoint(x: 1, y: 0.5)
+        mask.fillColor = nil
+        mask.strokeColor = NSColor.black.cgColor
+        layer?.addSublayer(gradient)
+        layer?.mask = mask
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func update(colors: [NSColor], line: CGPath, lineWidth: CGFloat, spinning: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradient.colors = (colors + colors.prefix(1)).map(\.cgColor)
+        mask.path = line
+        mask.lineWidth = lineWidth
+        CATransaction.commit()
+        self.spinning = spinning
+        spin()
+    }
+
+    override func setFrameSize(_ size: NSSize) {
+        super.setFrameSize(size)
+        // A square that covers the view at any angle.
+        let side = hypot(size.width, size.height)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradient.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        gradient.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        mask.frame = CGRect(origin: .zero, size: size)
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        spin()   // a layer loses its animations when it leaves a window
+    }
+
+    private func spin() {
+        let key = "spin"
+        guard spinning, window != nil else { return gradient.removeAnimation(forKey: key) }
+        guard gradient.animation(forKey: key) == nil else { return }
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = 0
+        turn.toValue = -2 * Double.pi   // clockwise
+        turn.duration = 6
+        turn.repeatCount = .infinity
+        gradient.add(turn, forKey: key)
     }
 }
 
