@@ -681,7 +681,7 @@ final class SpinningGradientView: NSView {
         guard gradient.animation(forKey: key) == nil else { return }
         let turn = CABasicAnimation(keyPath: "transform.rotation.z")
         turn.fromValue = 0
-        turn.toValue = -2 * Double.pi   // clockwise
+        turn.toValue = 2 * Double.pi   // clockwise: SwiftUI's hosting view is flipped
         turn.duration = 6
         turn.repeatCount = .infinity
         gradient.add(turn, forKey: key)
@@ -736,42 +736,127 @@ struct ClaudeStatusIcon: View {
     @Environment(\.isShowing) private var showing
 
     var body: some View {
-        TimelineView(.animation(paused: !showing)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            switch state {
-            case .working:
-                Circle()
-                    .trim(from: 0, to: 0.7)
-                    .stroke(state.color, style: StrokeStyle(lineWidth: max(size * 0.2, 1.5), lineCap: .round))
-                    .rotationEffect(.degrees(t * 360))           // one turn per second
-                    .padding(size * 0.1)
-            case .background:
-                ZStack {
-                    Circle()
-                        .stroke(state.color, style: StrokeStyle(lineWidth: max(size * 0.14, 1.2), dash: [size * 0.22, size * 0.16]))
-                        .rotationEffect(.degrees(t * 120))        // a third of a turn per second
-                    Circle()
-                        .fill(state.color)
-                        .frame(width: size * 0.3, height: size * 0.3)
-                }
-                .padding(size * 0.05)
-            case .waiting:
-                let phase = t.truncatingRemainder(dividingBy: 1.6) / 1.6
-                ZStack {
-                    Circle()                                       // ripple
-                        .stroke(state.color, lineWidth: 1.5)
-                        .scaleEffect(0.5 + phase * 0.6)
-                        .opacity(1 - phase)
-                    Circle()
-                        .fill(state.color)
-                        .frame(width: size * 0.55, height: size * 0.55)
-                }
-            }
+        Color.clear
+            .contentShape(Rectangle())
+            .help(state.help)
+            .overlay { ClaudeStatusLayers(state: state, size: size, animating: showing).allowsHitTesting(false) }
+            .frame(width: size, height: size)
+            .fixedSize()
+            .layoutPriority(1)
+    }
+}
+
+/// The icon as Core Animation layers: the window server moves them, so a board full of
+/// spinners costs Nav nothing (a `TimelineView` updated the whole window every frame).
+struct ClaudeStatusLayers: NSViewRepresentable {
+    let state: ClaudeState
+    let size: CGFloat
+    let animating: Bool
+
+    func makeNSView(context: Context) -> ClaudeStatusLayerView { ClaudeStatusLayerView() }
+
+    func updateNSView(_ view: ClaudeStatusLayerView, context: Context) {
+        view.update(state: state, size: size, animating: animating)
+    }
+}
+
+final class ClaudeStatusLayerView: NSView {
+    private var shown: (state: ClaudeState, size: CGFloat)?
+    private var animating = false
+    /// The part that turns or ripples.
+    private var moving: CAShapeLayer?
+
+    init() {
+        super.init(frame: .zero)
+        layer = CALayer()
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func update(state: ClaudeState, size: CGFloat, animating: Bool) {
+        if shown?.state != state || shown?.size != size {
+            shown = (state, size)
+            build(state, size)
         }
-        .frame(width: size, height: size)
-        .fixedSize()
-        .layoutPriority(1)
-        .help(state.help)
+        self.animating = animating
+        animate()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        animate()   // a layer loses its animations when it leaves a window
+    }
+
+    private func build(_ state: ClaudeState, _ size: CGFloat) {
+        let color = NSColor(state.color).cgColor
+        let box = CGRect(x: 0, y: 0, width: size, height: size)
+        func ring(inset: CGFloat, width: CGFloat) -> CAShapeLayer {
+            let ring = CAShapeLayer()
+            ring.frame = box
+            ring.path = CGPath(ellipseIn: box.insetBy(dx: inset, dy: inset), transform: nil)
+            ring.fillColor = nil
+            ring.strokeColor = color
+            ring.lineWidth = width
+            return ring
+        }
+        func dot(_ diameter: CGFloat) -> CAShapeLayer {
+            let dot = CAShapeLayer()
+            dot.frame = box
+            dot.path = CGPath(ellipseIn: box.insetBy(dx: (size - diameter) / 2, dy: (size - diameter) / 2), transform: nil)
+            dot.fillColor = color
+            return dot
+        }
+        let layers: [CAShapeLayer]
+        switch state {
+        case .working:
+            let arc = ring(inset: size * 0.1, width: max(size * 0.2, 1.5))
+            arc.strokeEnd = 0.7
+            arc.lineCap = .round
+            layers = [arc]
+        case .background:
+            let dashes = ring(inset: size * 0.05, width: max(size * 0.14, 1.2))
+            dashes.lineDashPattern = [NSNumber(value: size * 0.22), NSNumber(value: size * 0.16)]
+            layers = [dashes, dot(size * 0.3)]
+        case .waiting:
+            layers = [ring(inset: 0, width: 1.5), dot(size * 0.55)]
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.sublayers = layers
+        CATransaction.commit()
+        moving = layers[0]
+    }
+
+    private func animate() {
+        guard let moving, let state = shown?.state else { return }
+        let key = "move"
+        guard animating, window != nil else { return moving.removeAnimation(forKey: key) }
+        guard moving.animation(forKey: key) == nil else { return }
+        let animation: CAAnimation
+        switch state {
+        case .working, .background:
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            turn.fromValue = 0
+            turn.toValue = 2 * Double.pi
+            turn.duration = state == .working ? 1 : 3   // a turn a second; a third of one
+            animation = turn
+        case .waiting:
+            let grow = CABasicAnimation(keyPath: "transform.scale")
+            grow.fromValue = 0.5
+            grow.toValue = 1.1
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            let ripple = CAAnimationGroup()
+            ripple.animations = [grow, fade]
+            ripple.duration = 1.6
+            animation = ripple
+        }
+        animation.repeatCount = .infinity
+        moving.add(animation, forKey: key)
     }
 }
 

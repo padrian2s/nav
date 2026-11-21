@@ -1,4 +1,5 @@
 import AppKit
+import os
 import ScriptingBridge
 
 /// Apps whose tabs Nav can list and switch to, via their AppleScript dictionaries.
@@ -349,7 +350,12 @@ enum Tabs {
 
     /// True once Nav may send Apple Events to the app. The first time, it asks
     /// in the background and returns false, so popups never wait on the dialog.
+    /// Apps the user has already allowed Nav to script: asking the system costs ~20 ms, and the
+    /// Claude board asks every 1.5 s.
+    private static let automationGranted = OSAllocatedUnfairLock(initialState: Set<String>())
+
     private static func automationAllowed(_ app: TabApp) -> Bool {
+        if automationGranted.withLock({ $0.contains(app.bundleID) }) { return true }
         let target = NSAppleEventDescriptor(bundleIdentifier: app.bundleID)
         guard let desc = target.aeDesc else { return false }
         let status = AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, false)
@@ -358,6 +364,7 @@ enum Tabs {
                 _ = AEDeterminePermissionToAutomateTarget(target.aeDesc!, typeWildCard, typeWildCard, true)
             }
         }
+        if status == noErr { automationGranted.withLock { _ = $0.insert(app.bundleID) } }
         return status == noErr
     }
 
